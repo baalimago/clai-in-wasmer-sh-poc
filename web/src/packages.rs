@@ -51,20 +51,24 @@ struct Command {
     defaults: Option<CommandDefaults>,
 }
 
-/// Installs `first`, then the commands of `packages`, of which the earlier keeps a name two
-/// share, and mounts their volumes. Without a package command `sh`, bash's is `sh` too, since
-/// programs run `sh -c`. Resolves to the commands and volumes left out, and why.
+/// Installs `first`, files under their names, then the commands of `packages`, of which the
+/// earlier keeps a name two share, and mounts their volumes. Without a package command `sh`,
+/// bash's is `sh` too, since programs run `sh -c`. Resolves to the commands and volumes left
+/// out, and why.
 pub async fn install(
     machine: &mut Machine,
     packages: &[Package],
-    first: (String, OwnedBuffer),
+    first: Vec<(String, OwnedBuffer)>,
 ) -> Result<Vec<String>, Error> {
     let mut notes = Vec::new();
-    let mut commands = vec![Command {
-        name: first.0,
-        atom: first.1,
-        defaults: None,
-    }];
+    let mut commands: Vec<Command> = first
+        .into_iter()
+        .map(|(name, atom)| Command {
+            name,
+            atom,
+            defaults: None,
+        })
+        .collect();
     for package in packages {
         commands.extend(package_commands(package, packages, &mut notes)?);
     }

@@ -45,14 +45,16 @@ pub struct Shell {
 /// Boots the machine; its traffic leaves through the WISP server at `wisp_url`, its TLS
 /// clients trust `ca_certificates`, a PEM bundle at `/etc/ssl/certs/ca-certificates.crt`, where
 /// Debian keeps it and Go's `crypto/x509` looks first, and its console is a terminal of `rows`
-/// by `cols` that [`Shell::type_input`] types into. `/bin` holds `clai` and the commands of
+/// by `cols` that [`Shell::type_input`] types into. `/bin` holds `programs` (clai, the MCP
+/// server ports and the npx and uvx that start them) under `names`, and the commands of
 /// `packages`, webc v3 files, of which the earlier has a name two of them share; their volumes
 /// are mounted where the packages say.
 #[wasm_bindgen]
 pub async fn boot(
     wisp_url: String,
     ca_certificates: Vec<u8>,
-    clai: Vec<u8>,
+    names: Vec<String>,
+    programs: Vec<Uint8Array>,
     packages: Vec<Uint8Array>,
     rows: u16,
     cols: u16,
@@ -76,8 +78,18 @@ pub async fn boot(
         .map(|bytes| packages::Package::parse(bytes.to_vec()))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| JsError::new(&e.to_string()))?;
-    let clai = ("clai".to_string(), OwnedBuffer::from(clai));
-    let notes = packages::install(&mut machine, &packages, clai)
+    if names.len() != programs.len() {
+        return Err(JsError::new(&format!(
+            "{} program names for {} programs",
+            names.len(),
+            programs.len()
+        )));
+    }
+    let programs = names
+        .into_iter()
+        .zip(programs.iter().map(|bytes| OwnedBuffer::from(bytes.to_vec())))
+        .collect();
+    let notes = packages::install(&mut machine, &packages, programs)
         .await
         .map_err(|e| JsError::new(&e.to_string()))?;
     let certs = PackageFs::from_files(

@@ -18,13 +18,22 @@ const packageList = async () => {
   return response.ok ? response.json() : [];
 };
 
+// clai, then the programs `make` built for /bin: the MCP server ports, and npx and uvx.
+const programList = async () => {
+  const response = await fetch("./bin/index.json");
+  return [{ name: "clai", file: "clai.wasm" }, ...(response.ok ? await response.json() : [])];
+};
+
 await init();
 const certificates = await fetchBytes("./ca-certificates.crt");
-const clai = await fetchBytes("./clai.wasm");
-const list = await packageList();
-post({ log: `Loading ${["clai", ...list.map(({ name }) => name)].join(", ")}…` });
-const packages = await Promise.all(list.map(({ file }) => fetchBytes(`./packages/${file}`)));
-const shell = await boot(`ws://${location.host}/`, certificates, clai, packages, rows, cols);
+const [programs, list] = await Promise.all([programList(), packageList()]);
+post({ log: `Loading ${[...programs, ...list].map(({ name }) => name).join(", ")}…` });
+const [programBytes, packages] = await Promise.all([
+  Promise.all(programs.map(({ file }) => fetchBytes(`./${file}`))),
+  Promise.all(list.map(({ file }) => fetchBytes(`./packages/${file}`))),
+]);
+const names = programs.map(({ name }) => name);
+const shell = await boot(`ws://${location.host}/`, certificates, names, programBytes, packages, rows, cols);
 for (const note of shell.notes()) post({ log: `\x1b[33m${note}\x1b[0m` });
 const home = shell.login_env().find((v) => v.startsWith("HOME="))?.slice("HOME=".length) ?? "/";
 post({ ready: true, bash: list.some(({ name }) => name === "wasmer/bash"), home });

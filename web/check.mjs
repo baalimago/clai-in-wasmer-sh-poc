@@ -1,5 +1,6 @@
 // Runs clai in the page in headless Chromium and checks that it printed its usage, that it
-// reads what is typed on its terminal, and, with bash installed, that lines run in bash.
+// reads what is typed on its terminal, and, with bash installed, that lines run in bash, that
+// clai calls an MCP server uvx starts, and that its async commands run.
 import { chromium } from "playwright";
 
 import { startServer } from "./server.mjs";
@@ -17,6 +18,46 @@ const SHELL = [
   { line: "ls /bin | grep -x clai", prints: "clai" },
   { line: "cd /usr/bin", prints: "" },
   { line: "pwd", prints: "/usr/bin" },
+];
+
+// npx and uvx start the MCP server ports in /bin, and clai talks MCP to them over pipes. The
+// profile has the shape of cchub:clai/researcher's ddg server; the test model calls the tools
+// its prompt names, with no arguments, so the port's answer is that the query is missing. The
+// terminal wraps long lines, so the expected texts are short.
+const PROFILE = JSON.stringify({
+  use_tools: true,
+  tools: ["mcp_ddg*", "cmd", "async_cmd*"],
+  mcp_servers: { ddg: { command: "uvx", args: ["duckduckgo-mcp-server==0.7.0"], startup: "lazy" } },
+});
+// An async command that writes its own id where the test model reads it, while `cmd` sleeps
+// to let it run.
+const ASYNC = [
+  `ls /tmp | sed -n "s/^clai-async-cmd-\\(async_cmd_[0-9a-f]*\\)-stdout.log$/\\1/p" > /tmp/id.tmp`,
+  "mv /tmp/id.tmp /tmp/id",
+  "echo async-done",
+];
+const MCP = [
+  {
+    line: `printf '%s\\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | uvx duckduckgo-mcp-server==0.7.0`,
+    status: 0,
+    prints: '"name":"ddg-search"',
+  },
+  { line: "npx -y left-pad@1.3.0", status: 127, prints: "left-pad is not available" },
+  { line: `printf '%s' '${PROFILE}' > /tmp/mcp.json`, status: 0, prints: "" },
+  {
+    line: "clai -profile-path /tmp/mcp.json -cm test query tool_mcp_ddg_search 2>&1 | cat",
+    status: 0,
+    prints: "missing required argument",
+  },
+  { line: `printf '%s\\n' ${ASYNC.map((l) => `'${l.replaceAll("'", "'\\''")}'`).join(" ")} > /tmp/async.sh`, status: 0, prints: "" },
+  {
+    line:
+      "CLAI_MOCK_CMD_COMMAND='sleep 2' CLAI_MOCK_ASYNC_CMD_RUN_COMMAND=sh CLAI_MOCK_ASYNC_CMD_RUN_ARGS=/tmp/async.sh " +
+      "CLAI_MOCK_ASYNC_CMD_ID_FILE=/tmp/id clai -profile-path /tmp/mcp.json -cm test " +
+      "query tool_async_cmd tool_cmd tool_async_cmd_await tool_async_cmd_logs 2>&1 | cat",
+    status: 0,
+    prints: '"preview":"async-done',
+  },
 ];
 
 // `clai setup` asks for a category on /dev/tty. `keys` are typed once it does.
@@ -55,7 +96,17 @@ try {
       process.exitCode = 1;
     }
   }
-  if (!bash) console.log("\nskipped the shell rows: no bash (make packages)");
+  for (const { line, status: want, prints } of bash ? MCP : []) {
+    const before = await page.evaluate(() => window.terminalText());
+    const status = await page.evaluate((line) => window.runCommand(line), line);
+    const printed = (await page.evaluate(() => window.terminalText())).slice(before.length);
+    console.log(printed.trimEnd());
+    if (status !== want || !printed.includes(prints)) {
+      console.error(`\nFAIL: ${line} exited with ${status} (want ${want}) or did not print ${prints}`);
+      process.exitCode = 1;
+    }
+  }
+  if (!bash) console.log("\nskipped the shell and MCP rows: no bash (make packages)");
   for (const { name, keys, status: want } of INTERACTIVE) {
     const before = await page.evaluate(() => window.terminalText());
     await page.evaluate(() => {

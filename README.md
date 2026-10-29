@@ -3,7 +3,8 @@
 [clai](https://github.com/baalimago/clai), a Go program, compiled for a Go port to WASIX v2 and
 run on wasmer's WASIX v2 kernel in a browser tab. The page is a terminal over a small Linux-like
 machine whose `/bin` has clai, bash, coreutils, grep, sed, find, rg, fd and git from the Wasmer
-registry; type `ls /bin` or `clai h`.
+registry, and an `npx` and `uvx` that start the MCP servers clai profiles ask for; type `ls /bin`
+or `clai h`.
 
 ```sh
 git clone --recurse-submodules --shallow-submodules https://github.com/baalimago/clai-in-wasmer-sh-poc
@@ -15,8 +16,8 @@ make poc
 (`make packages`, from registry.wasmer.io), serves the page on http://localhost:5001 and opens it
 in your default browser. The first build takes a few minutes (the Go toolchain and the wasm kernel);
 later ones take seconds. `make check` runs the same page in headless Chromium and checks that
-`clai h` and `clai help` print clai's usage, that clai reads its terminal, and that lines run
-in bash.
+`clai h` and `clai help` print clai's usage, that clai reads its terminal, that lines run
+in bash, that clai calls an MCP server that `uvx` starts, and that its async commands run.
 
 ## Prerequisites
 
@@ -36,6 +37,8 @@ browser tab
 └─ worker.js: a Web Worker running the WASIX v2 machine (web/src/lib.rs)
    ├─ console: the terminal, as the machine's /dev/hvc0, while a line runs
    ├─ /bin/clai: clai built with GOOS=wasix GOARCH=wasm
+   ├─ /bin/npx, /bin/uvx: mcp/launcher.sh, which starts the MCP server ports below
+   ├─ /bin/duckduckgo-mcp-server: mcp/duckduckgo-mcp-server, built like clai
    ├─ /bin/bash, /bin/ls, ...: registry packages (WASIX v1), on the kernel's v1 compatibility ABI
    └─ network: wasixv2-vnet-wisp, one WebSocket to the WISP proxy
                  └─ server.mjs: page, WISP proxy (wisp-js) and real TCP, on 127.0.0.1:5001
@@ -47,6 +50,8 @@ browser tab
 | `components/wasixv2-abi` | The ABI and its code generators, including the Go backend that writes the port's syscall glue. Not needed for the build; it is here to regenerate that glue |
 | `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-1nkwvt)) |
 | `components/clai` | clai itself, unchanged |
+| `mcp/duckduckgo-mcp-server` | A Go port of [duckduckgo-mcp-server](https://github.com/nickclyde/duckduckgo-mcp-server) 0.7.0: its tools, arguments, output and `DDG_*` settings |
+| `mcp/launcher.sh` | `npx` and `uvx`: run the packages that have a port in `/bin`, and say so for the others |
 | `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted and clai and the packages in `/bin`, compiles each program once, runs a file as often as asked |
 | `web/src/packages.rs` | Installs webc packages as `wasmer run` does: commands in `/bin`, with their `wasi` annotations for v1 programs, and volumes where the package says |
 | `web/packages.txt`, `web/fetch-packages.mjs` | The registry packages, and the script that downloads them to `web/www/packages` |
@@ -88,6 +93,33 @@ the others up.
   `sh -c`. A shell context's first variable starts bash, which compiles first, so give it a
   `timeout_ms` of some seconds rather than the 100 ms default.
 
+## MCP servers
+
+clai profiles start MCP servers with `npx` (Node.js) and `uvx` (Python), and the machine has
+neither runtime that could run them:
+
+- Python: the registry's `python/python` 3.13 runs, but MCP servers need the `mcp` package,
+  whose dependencies (`pydantic-core`, `rpds-py`, `cryptography`) are native extensions. The
+  [WASIX index](https://python-registry.wasix.org/) has them as shared libraries, and the
+  kernel's WASIX v1 layer refuses `dlopen`.
+- Node.js: the registry's `wasmer/edgejs` has `node`, `npm` and `npx`, but no JavaScript
+  engine of its own: it imports N-API from its host (wasmerio/napi has a browser backend for
+  wasmer-js), which the WASIX v2 machine does not provide yet.
+
+So `npx` and `uvx` are `mcp/launcher.sh`, which accepts their usual forms (`npx -y pkg@1.2.3
+args`, `uvx pkg==1.2.3 args`, `--from`) and runs the package's port from `/bin`, ignoring the
+version. `cchub:clai/researcher` starts:
+
+| Server | Command | Here |
+| --- | --- | --- |
+| ddg | `uvx duckduckgo-mcp-server==0.7.0` | Runs the Go port: `search`, `fetch_content` and `expand_link` give the Python server's output, and a live search answers from the page |
+| slivingdoc | `npx -y slivingdoc@1.3.1 serve ...` | No port yet: slivingdoc is Go, but its git engine is libgit2 through cgo, which Go's wasm targets lack. The profile marks it optional, so clai warns and runs without it |
+
+The Go port has no threads, so a blocking read stops every goroutine. An MCP server reading
+its requests from a pipe on stdin would stop the goroutine answering the request it just
+read, so the ddg port puts stdin in the netpoller (`mcp/duckduckgo-mcp-server/stdin_unix.go`).
+Any other Go MCP server built for the machine needs the same.
+
 ## What doesn't work yet
 
 - Each line is a new bash, so shell variables, functions and jobs do not outlive it; `cd` and
@@ -96,3 +128,8 @@ the others up.
 - `^C` kills clai rather than letting it clean up: the Go port cannot deliver signals to Go
   code yet, so `os/signal` never hears of SIGINT and its default action ends the process.
 - Files exist only in memory, for the life of the tab.
+- `npx` and `uvx` run only the ports in `/bin`: there is no Node.js or Python package
+  installation (see [MCP servers](#mcp-servers)).
+- `fetch_content` refuses addresses that are not public, as the Python server does, so a
+  network whose DNS answers with private addresses (a VPN's fake IPs in 198.18.0.0/15, say)
+  needs `DDG_ALLOW_PRIVATE_URLS=1`.

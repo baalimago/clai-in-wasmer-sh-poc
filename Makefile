@@ -1,6 +1,6 @@
-# `make poc` builds the Go port, clai for it, and the page's WASIX v2 machine, downloads the
-# registry packages the machine's /bin holds, then serves the page and opens it. See README.md
-# for what each piece is.
+# `make poc` builds the Go port, clai and the MCP server ports for it, and the page's WASIX v2
+# machine, downloads the registry packages the machine's /bin holds, then serves the page and
+# opens it. See README.md for what each piece is.
 
 GO := $(CURDIR)/components/go/bin/go
 WEB := $(CURDIR)/web
@@ -16,12 +16,13 @@ poc: build
 serve: build
 	cd $(WEB) && node server.mjs
 
-# Headless: runs `clai h` and `clai help` in the page and checks what they print.
+# Headless: runs `clai h`, `clai help`, shell lines and an MCP server in the page and checks what
+# they print.
 check: build
 	cd $(WEB) && npx playwright install chromium && npm test
 
-build: $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WWW)/pkg/clai_web.js $(WWW)/packages/index.json \
-	$(WEB)/node_modules
+build: $(WWW)/clai.wasm $(WWW)/bin/index.json $(WWW)/ca-certificates.crt $(WWW)/pkg/clai_web.js \
+	$(WWW)/packages/index.json $(WEB)/node_modules
 
 submodules:
 	git submodule update --init --depth 1
@@ -31,6 +32,23 @@ $(GO): | submodules
 
 $(WWW)/clai.wasm: $(GO) FORCE | submodules
 	cd components/clai && GOTOOLCHAIN=local GOOS=wasix GOARCH=wasm $(GO) build -o $@ .
+
+# The MCP servers' ports, which the machine's npx and uvx (mcp/launcher.sh) start, in /bin with
+# them. index.json lists them for the page's worker.
+MCP_PORTS := duckduckgo-mcp-server
+LAUNCHERS := npx uvx
+
+$(WWW)/bin/%.wasm: $(GO) FORCE
+	@mkdir -p $(@D)
+	cd mcp/$* && GOTOOLCHAIN=local GOOS=wasix GOARCH=wasm $(GO) build -o $@ .
+
+$(WWW)/bin/launcher.sh: mcp/launcher.sh
+	@mkdir -p $(@D)
+	cp $< $@
+
+$(WWW)/bin/index.json: $(MCP_PORTS:%=$(WWW)/bin/%.wasm) $(WWW)/bin/launcher.sh
+	node -e 'const [ports, launchers] = process.argv.slice(1).map((s) => s.split(" ")); console.log(JSON.stringify([...ports.map((name) => ({ name, file: `bin/$${name}.wasm` })), ...launchers.map((name) => ({ name, file: "bin/launcher.sh" }))], null, 2))' \
+		"$(MCP_PORTS)" "$(LAUNCHERS)" > $@
 
 # The roots the guest's TLS clients trust: Mozilla's, as the Node.js that serves the page bundles
 # them. The machine mounts them at /etc/ssl/certs/ca-certificates.crt.
@@ -56,5 +74,5 @@ $(WEB)/node_modules: $(WEB)/package-lock.json
 	touch $@
 
 clean:
-	rm -rf $(WEB)/target $(WWW)/pkg $(WWW)/packages $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WEB)/node_modules .tools
+	rm -rf $(WEB)/target $(WWW)/pkg $(WWW)/packages $(WWW)/bin $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WEB)/node_modules .tools
 	cd components/go/src && ./clean.bash
