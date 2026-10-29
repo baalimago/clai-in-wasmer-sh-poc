@@ -3,3 +3,4 @@
 /web/target/
 /web/www/pkg/
 /web/www/clai.wasm
+/web/www/ca-certificates.crt

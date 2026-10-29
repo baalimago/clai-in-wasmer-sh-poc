@@ -1,13 +1,19 @@
 // Runs the WASIX v2 machine off the page's thread: browsers instantiate modules over 8 MB
 // synchronously only in workers, and the terminal stays responsive while clai runs.
-import init, { Shell, compile } from "./pkg/clai_web.js";
+import init, { boot, compile } from "./pkg/clai_web.js";
 
 const post = (message) => postMessage(message);
 
+const fetchBytes = async (url) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`cannot fetch ${url}: ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+};
+
 await init();
-const shell = new Shell(`ws://${location.host}/`);
+const shell = await boot(`ws://${location.host}/`, await fetchBytes("./ca-certificates.crt"));
 post({ log: "Compiling clai…" });
-const clai = await compile(new Uint8Array(await (await fetch("./clai.wasm")).arrayBuffer()));
+const clai = await compile(await fetchBytes("./clai.wasm"));
 post({ ready: true });
 
 onmessage = async ({ data: { args, env } }) => {

@@ -5,7 +5,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use js_sys::Promise;
-use wasixv2::{Engine, Machine, MachineBuilder, ProcessConfig, Stdio, WebHost};
+use wasixv2::{Engine, Machine, MachineBuilder, OwnedBuffer, ProcessConfig, Stdio, WebHost};
+use wasixv2_vfs_package::PackageFs;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 use wasmer::Module;
@@ -48,22 +49,37 @@ pub struct Shell {
     output: Output,
 }
 
+/// Boots the machine; its traffic leaves through the WISP server at `wisp_url`, and its TLS
+/// clients trust `ca_certificates`, a PEM bundle at `/etc/ssl/certs/ca-certificates.crt`, where
+/// Debian keeps it and Go's `crypto/x509` looks first.
+#[wasm_bindgen]
+pub async fn boot(wisp_url: String, ca_certificates: Vec<u8>) -> Result<Shell, JsError> {
+    let backend = wasixv2_vnet_wisp::web::connect(&wisp_url)
+        .map_err(|e| JsError::new(&format!("cannot open {wisp_url}: {e:?}")))?;
+    let machine = MachineBuilder::new(Arc::new(WebHost::new()))
+        .backend(Arc::new(backend))
+        .build();
+    let certs = PackageFs::from_files(
+        [(
+            "ca-certificates.crt".into(),
+            OwnedBuffer::from(ca_certificates),
+        )],
+        0,
+        0,
+    )
+    .map_err(|e| JsError::new(&format!("cannot hold the CA certificates: {e}")))?;
+    machine
+        .mount("/etc/ssl/certs", Arc::new(certs), true)
+        .await
+        .map_err(|e| JsError::new(&format!("cannot mount /etc/ssl/certs: {e}")))?;
+    Ok(Shell {
+        machine: Rc::new(machine),
+        output: Output::default(),
+    })
+}
+
 #[wasm_bindgen]
 impl Shell {
-    /// Boots the machine; its traffic leaves through the WISP server at `wisp_url`.
-    #[wasm_bindgen(constructor)]
-    pub fn new(wisp_url: &str) -> Result<Shell, JsError> {
-        let backend = wasixv2_vnet_wisp::web::connect(wisp_url)
-            .map_err(|e| JsError::new(&format!("cannot open {wisp_url}: {e:?}")))?;
-        let machine = MachineBuilder::new(Arc::new(WebHost::new()))
-            .backend(Arc::new(backend))
-            .build();
-        Ok(Shell {
-            machine: Rc::new(machine),
-            output: Output::default(),
-        })
-    }
-
     /// Runs `program` with `args` (`args[0]` is its name) and `env` (`KEY=VALUE`) on top of
     /// a login's, and resolves to its exit status. What it prints collects for
     /// [`Shell::take_output`].

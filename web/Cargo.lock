@@ -288,6 +288,7 @@ version = "0.0.0"
 dependencies = [
  "js-sys",
  "wasixv2",
+ "wasixv2-vfs-package",
  "wasixv2-vnet-wisp",
  "wasm-bindgen",
  "wasm-bindgen-futures",

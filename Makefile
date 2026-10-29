@@ -19,7 +19,7 @@ serve: build
 check: build
 	cd $(WEB) && npx playwright install chromium && npm test
 
-build: $(WWW)/clai.wasm $(WWW)/pkg/clai_web.js $(WEB)/node_modules
+build: $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WWW)/pkg/clai_web.js $(WEB)/node_modules
 
 submodules:
 	git submodule update --init --depth 1
@@ -29,6 +29,11 @@ $(GO): | submodules
 
 $(WWW)/clai.wasm: $(GO) FORCE | submodules
 	cd components/clai && GOTOOLCHAIN=local GOOS=wasix GOARCH=wasm $(GO) build -o $@ .
+
+# The roots the guest's TLS clients trust: Mozilla's, as the Node.js that serves the page bundles
+# them. The machine mounts them at /etc/ssl/certs/ca-certificates.crt.
+$(WWW)/ca-certificates.crt:
+	node -e 'process.stdout.write(require("tls").rootCertificates.join("\n") + "\n")' > $@
 
 $(WWW)/pkg/clai_web.js: $(WASM_BINDGEN) FORCE | submodules
 	cd $(WEB) && cargo build --release --target wasm32-unknown-unknown
@@ -43,5 +48,5 @@ $(WEB)/node_modules: $(WEB)/package-lock.json
 	touch $@
 
 clean:
-	rm -rf $(WEB)/target $(WWW)/pkg $(WWW)/clai.wasm $(WEB)/node_modules .tools
+	rm -rf $(WEB)/target $(WWW)/pkg $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WEB)/node_modules .tools
 	cd components/go/src && ./clean.bash

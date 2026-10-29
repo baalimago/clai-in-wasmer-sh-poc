@@ -41,7 +41,7 @@ browser tab
 | `components/wasixv2-abi` | The ABI and its code generators, including the Go backend that writes the port's syscall glue. Not needed for the build; it is here to regenerate that glue |
 | `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-l55h85)) |
 | `components/clai` | clai itself, unchanged |
-| `web/src/lib.rs` | The machine: boots once per page, compiles a program once, runs it as often as asked |
+| `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted, compiles a program once, runs it as often as asked |
 | `web/www` | The page, its worker and its line editor |
 | `web/server.mjs` | Serves the page and the WISP proxy on one port |
 | `web/check.mjs` | The headless check behind `make check` |
@@ -53,11 +53,14 @@ so what clai writes under `~/.config` stays until the tab closes.
 ## What works
 
 - `clai h`, `clai help`, `clai version`, `clai confdir` and anything else that only prints.
-- Name lookups and TCP: the guest resolves names through the WISP proxy, and its connections
-  go out through the proxy's host. A query like
-  `export OPENAI_API_KEY=sk-...` then `clai -cm gpt-4o q hello` gets as far as the proxy
-  connecting to the provider. That last step could not be tried where this was built (it had
-  no DNS for api.openai.com), so a live query on your machine is the next thing to try.
+- Name lookups, TCP and HTTPS: the guest resolves names through the WISP proxy, and its
+  connections go out through the proxy's host. TLS clients trust Mozilla's roots, which
+  `make` writes to `web/www/ca-certificates.crt` from the Node.js running the build, and the
+  machine mounts at `/etc/ssl/certs/ca-certificates.crt`. So
+  `export OPENAI_API_KEY=sk-...` then `clai -cm gpt-4o q hello` makes a live query. Where this
+  was built, every outbound connection went through a proxy that re-signs TLS, so the check
+  there was with the proxy's CA appended to the bundle: `clai -cm claude-sonnet-5-5 q hello`
+  with a made-up key got Anthropic's `401 invalid x-api-key` back.
 
 ## What doesn't work yet
 
