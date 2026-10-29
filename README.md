@@ -43,7 +43,7 @@ browser tab
 
 | Path | What it is |
 | --- | --- |
-| `components/go` | The Go port: `GOOS=wasix GOARCH=wasm` on go1.26.10 ([baalimago/go](https://github.com/baalimago/go/tree/claude/project-thread-1nkwvt)) |
+| `components/go` | The Go port: `GOOS=wasix GOARCH=wasm` on go1.26.10 ([baalimago/go](https://github.com/baalimago/go/tree/claude/project-thread-q0c41s)) |
 | `components/wasixv2-abi` | The ABI and its code generators, including the Go backend that writes the port's syscall glue. Not needed for the build; it is here to regenerate that glue |
 | `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-1nkwvt)) |
 | `components/clai` | clai itself, unchanged |
@@ -83,9 +83,10 @@ the others up.
 - Starting programs: Go's `os/exec` starts them through wasixv2's `spawn` (`posix_spawn` in one
   call), with pipes, `Dir` and `Env`, and WASIX v1 programs start others as on wasmer's v1
   runtime, so clai's shell tools and `-add-shell-context` can run `sh -c`, rg, find and git.
-  In Chromium this was checked with Go and WASI test programs in a local package; the
-  registry's bash and coreutils were not reachable where this was built, so `make check`'s
-  bash rows (pipes, `ls /bin`, `cd`) are still to be seen passing.
+  `make check`'s bash rows (pipes, `ls /bin`, `cd`) pass in headless Chromium with the
+  registry's packages, and so do clai's `cmd` tool and `-add-shell-context`, each running
+  `sh -c`. A shell context's first variable starts bash, which compiles first, so give it a
+  `timeout_ms` of some seconds rather than the 100 ms default.
 
 ## What doesn't work yet
 

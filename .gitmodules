@@ -1,7 +1,7 @@
 [submodule "components/go"]
 	path = components/go
 	url = https://github.com/baalimago/go.git
-	branch = claude/project-thread-1nkwvt
+	branch = claude/project-thread-q0c41s
 	shallow = true
 [submodule "components/wasixv2-abi"]
 	path = components/wasixv2-abi
