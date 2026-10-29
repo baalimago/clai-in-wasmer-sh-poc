@@ -30,6 +30,7 @@ later ones take seconds. `make check` runs the same page in headless Chromium an
 browser tab
 ├─ index.html: xterm.js and a tiny line editor (clai, export, clear, help)
 └─ worker.js: a Web Worker running the WASIX v2 machine (web/src/lib.rs)
+   ├─ console: the terminal, as the machine's /dev/hvc0, while clai runs
    ├─ clai.wasm: clai built with GOOS=wasix GOARCH=wasm
    └─ network: wasixv2-vnet-wisp, one WebSocket to the WISP proxy
                  └─ server.mjs: page, WISP proxy (wisp-js) and real TCP, on 127.0.0.1:5001
@@ -46,6 +47,11 @@ browser tab
 | `web/server.mjs` | Serves the page and the WISP proxy on one port |
 | `web/check.mjs` | The headless check behind `make check` |
 
+While clai runs, what you type goes to the machine's console, a terminal whose line discipline
+is the kernel's, as on Linux: clai's descriptors 0, 1 and 2 and its `/dev/tty` are that
+terminal, the kernel echoes and edits what you type, `^C` is SIGINT, and the window's size
+reaches clai as the terminal's. Between commands the page's own line editor reads the prompt.
+
 The machine runs in a Web Worker because Chrome compiles and instantiates a module over 8 MB
 (clai is 29 MB) synchronously only off the page's thread. One machine serves every command,
 so what clai writes under `~/.config` stays until the tab closes.
@@ -61,12 +67,14 @@ so what clai writes under `~/.config` stays until the tab closes.
   was built, every outbound connection went through a proxy that re-signs TLS, so the check
   there was with the proxy's CA appended to the bundle: `clai -cm claude-sonnet-5-5 q hello`
   with a made-up key got Anthropic's `401 invalid x-api-key` back.
+- Interactive prompts: `clai setup`, `clai chat list` and the like read from the terminal, with
+  the kernel editing the line as you type it, and `^C` stops clai.
 
 ## What doesn't work yet
 
 - Starting other programs: the machine has no `/bin`, and there is no shell, so clai's shell
   tools, `-add-shell-context`, glow and anything else that runs a subprocess fail.
-- The terminal is not a TTY to clai: its output is a pipe, and stdin is empty, so piping
-  into clai and interactive prompts (`clai setup`, `-r` chat) don't work.
-- `^C` doesn't stop a running clai; reload the page.
+- Piping into clai: there is no shell, so stdin is always the terminal.
+- `^C` kills clai rather than letting it clean up: the Go port cannot deliver signals to Go
+  code yet, so `os/signal` never hears of SIGINT and its default action ends the process.
 - Files exist only in memory, for the life of the tab.

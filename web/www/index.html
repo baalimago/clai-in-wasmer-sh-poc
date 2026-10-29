@@ -12,7 +12,9 @@
   import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
   import { LineEditor, split } from "./shell.js";
 
-  const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 14 });
+  // No convertEol: clai's output comes through the machine's terminal, which turns "\n" into
+  // "\r\n" itself unless the program asked for raw output.
+  const term = new Terminal({ cursorBlink: true, fontSize: 14 });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(document.querySelector("#terminal"));
@@ -21,6 +23,8 @@
 
   term.writeln("Booting a WASIX v2 machine…");
   const worker = new Worker("./worker.js", { type: "module" });
+  const size = () => ({ rows: term.rows, cols: term.cols });
+  worker.postMessage({ size: size() });
   let finished = null;
   worker.onerror = (event) => term.writeln(`\x1b[31mworker failed: ${event.message}\x1b[0m`);
   await new Promise((ready) => {
@@ -32,14 +36,15 @@
       if ("status" in data) finished(data.status);
     };
   });
-  term.writeln("Ready. Try \x1b[1mclai h\x1b[0m, or \x1b[1mhelp\x1b[0m.\n");
+  term.writeln("Ready. Try \x1b[1mclai h\x1b[0m, or \x1b[1mhelp\x1b[0m.\r\n");
+  term.onResize(() => worker.postMessage({ size: size() }));
 
   const env = new Map();
   const builtins = {
     help: () => term.writeln(
-      "clai <args>         run clai on the WASIX v2 machine\n" +
-      "export KEY=VALUE    set a variable for clai, such as OPENAI_API_KEY\n" +
-      "clear               clear the screen\n" +
+      "clai <args>         run clai on the WASIX v2 machine\r\n" +
+      "export KEY=VALUE    set a variable for clai, such as OPENAI_API_KEY\r\n" +
+      "clear               clear the screen\r\n" +
       "Programs can't start other programs yet, so clai's tools and shell features don't work."),
     clear: () => term.clear(),
     export: (...assignments) => {
@@ -64,12 +69,19 @@
       return 127;
     }
     return new Promise((resolve) => {
-      finished = resolve;
+      finished = (status) => {
+        // As bash does, the prompt goes on a new line after ^C killed the program.
+        if (status === 128 + 2) term.write("\r\n");
+        resolve(status);
+      };
       worker.postMessage({ args, env: [...env].map(([key, value]) => `${key}=${value}`) });
     });
   }
 
-  const editor = new LineEditor(term, "$ ", run);
+  // While clai runs, what is typed goes to the machine's terminal as it is.
+  const encoder = new TextEncoder();
+  const editor = new LineEditor(term, "$ ", run, (data) =>
+    worker.postMessage({ input: encoder.encode(data) }));
   window.runCommand = (line) => editor.submit(line);
   window.terminalText = () => {
     const buffer = term.buffer.active;

@@ -29,12 +29,14 @@ export function split(line) {
 }
 
 // Reads lines from the terminal, with backspace, ^C, ^L and history on the arrow keys, and
-// hands each to `run`, which resolves when the command is done.
+// hands each to `run`, which resolves when the command is done. What is typed meanwhile goes
+// to `passthrough`.
 export class LineEditor {
-  constructor(term, prompt, run) {
+  constructor(term, prompt, run, passthrough) {
     this.term = term;
     this.prompt = prompt;
     this.run = run;
+    this.passthrough = passthrough;
     this.line = "";
     this.history = [];
     this.recalled = 0;
@@ -44,7 +46,7 @@ export class LineEditor {
   }
 
   input(data) {
-    if (this.busy) return;
+    if (this.busy) return this.passthrough(data);
     switch (data) {
       case "\r":
         this.term.write("\r\n");
