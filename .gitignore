@@ -1,0 +1,5 @@
+/.tools/
+/web/node_modules/
+/web/target/
+/web/www/pkg/
+/web/www/clai.wasm

@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>clai on WASIX v2</title>
+<link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
+<style>
+  html, body { height: 100%; margin: 0; background: #1e1e1e; }
+  #terminal { height: 100%; padding: 8px; box-sizing: border-box; }
+</style>
+<div id="terminal"></div>
+<script type="module">
+  import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
+  import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
+  import { LineEditor, split } from "./shell.js";
+
+  const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 14 });
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.open(document.querySelector("#terminal"));
+  fit.fit();
+  addEventListener("resize", () => fit.fit());
+
+  term.writeln("Booting a WASIX v2 machine…");
+  const worker = new Worker("./worker.js", { type: "module" });
+  let finished = null;
+  worker.onerror = (event) => term.writeln(`\x1b[31mworker failed: ${event.message}\x1b[0m`);
+  await new Promise((ready) => {
+    worker.onmessage = ({ data }) => {
+      if (data.log) term.writeln(data.log);
+      if (data.ready) ready();
+      if (data.output) term.write(data.output);
+      if (data.error) term.writeln(`\x1b[31m${data.error}\x1b[0m`);
+      if ("status" in data) finished(data.status);
+    };
+  });
+  term.writeln("Ready. Try \x1b[1mclai h\x1b[0m, or \x1b[1mhelp\x1b[0m.\n");
+
+  const env = new Map();
+  const builtins = {
+    help: () => term.writeln(
+      "clai <args>         run clai on the WASIX v2 machine\n" +
+      "export KEY=VALUE    set a variable for clai, such as OPENAI_API_KEY\n" +
+      "clear               clear the screen\n" +
+      "Programs can't start other programs yet, so clai's tools and shell features don't work."),
+    clear: () => term.clear(),
+    export: (...assignments) => {
+      for (const assignment of assignments) {
+        const at = assignment.indexOf("=");
+        if (at > 0) env.set(assignment.slice(0, at), assignment.slice(at + 1));
+        else term.writeln(`export: want KEY=VALUE, got ${assignment}`);
+      }
+    },
+  };
+
+  // Runs `line` and resolves to its exit status, streaming what it prints.
+  async function run(line) {
+    const args = split(line);
+    if (args.length === 0) return 0;
+    if (builtins[args[0]]) {
+      builtins[args[0]](...args.slice(1));
+      return 0;
+    }
+    if (args[0] !== "clai") {
+      term.writeln(`${args[0]}: command not found (only clai is installed)`);
+      return 127;
+    }
+    return new Promise((resolve) => {
+      finished = resolve;
+      worker.postMessage({ args, env: [...env].map(([key, value]) => `${key}=${value}`) });
+    });
+  }
+
+  const editor = new LineEditor(term, "$ ", run);
+  window.runCommand = (line) => editor.submit(line);
+  window.terminalText = () => {
+    const buffer = term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buffer.length; i++) lines.push(buffer.getLine(i).translateToString(true));
+    return lines.join("\n");
+  };
+  document.body.dataset.ready = "true";
+  term.focus();
+</script>

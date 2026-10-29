@@ -1,0 +1,21 @@
+# Its own workspace: it only builds for the browser, against the wasmer submodule.
+[workspace]
+
+[package]
+name = "clai-web"
+version = "0.0.0"
+description = "A WASIX v2 machine in the page that runs clai, with its network over WISP"
+publish = false
+edition = "2024"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+js-sys = "0.3"
+wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["js", "web"] }
+wasixv2-vnet-wisp = { path = "../components/wasmer/lib/wasixv2/vnet-wisp", features = ["web"] }
+wasmer = { path = "../components/wasmer/lib/api", default-features = false, features = ["js-default"] }
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "0.4"
