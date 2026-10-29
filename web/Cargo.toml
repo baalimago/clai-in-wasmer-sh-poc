@@ -14,9 +14,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 js-sys = "0.3"
-wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["js", "web"] }
+wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["js", "web", "wasix1"] }
 wasixv2-vfs-package = { path = "../components/wasmer/lib/wasixv2/vfs-package" }
 wasixv2-vnet-wisp = { path = "../components/wasmer/lib/wasixv2/vnet-wisp", features = ["web"] }
 wasmer = { path = "../components/wasmer/lib/api", default-features = false, features = ["js-default"] }
 wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "0.4"
+webc = { version = "=12.0.1", default-features = false, features = ["v3"] }

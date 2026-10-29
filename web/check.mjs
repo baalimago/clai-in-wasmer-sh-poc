@@ -1,5 +1,5 @@
-// Runs clai in the page in headless Chromium and checks that it printed its usage, and that it
-// reads what is typed on its terminal.
+// Runs clai in the page in headless Chromium and checks that it printed its usage, that it
+// reads what is typed on its terminal, and, with bash installed, that lines run in bash.
 import { chromium } from "playwright";
 
 import { startServer } from "./server.mjs";
@@ -8,6 +8,15 @@ const COMMANDS = [
   // `h` is not a command, so clai says so, prints its usage and exits with 1, as it does natively.
   { line: "clai h", status: 1 },
   { line: "clai help", status: 0 },
+];
+
+// With the registry packages, lines run in bash, whose pipelines are WASIX v1 programs, and
+// clai's tools start programs the same way.
+const SHELL = [
+  { line: "echo hello | tr a-z A-Z", prints: "HELLO" },
+  { line: "ls /bin | grep -x clai", prints: "clai" },
+  { line: "cd /usr/bin", prints: "" },
+  { line: "pwd", prints: "/usr/bin" },
 ];
 
 // `clai setup` asks for a category on /dev/tty. `keys` are typed once it does.
@@ -35,6 +44,18 @@ try {
       process.exitCode = 1;
     }
   }
+  const bash = await page.evaluate(() => document.body.dataset.bash === "true");
+  for (const { line, prints } of bash ? SHELL : []) {
+    const before = await page.evaluate(() => window.terminalText());
+    const status = await page.evaluate((line) => window.runCommand(line), line);
+    const printed = (await page.evaluate(() => window.terminalText())).slice(before.length);
+    console.log(printed.trimEnd());
+    if (status !== 0 || !printed.includes(prints)) {
+      console.error(`\nFAIL: ${line} exited with ${status} or did not print ${prints}`);
+      process.exitCode = 1;
+    }
+  }
+  if (!bash) console.log("\nskipped the shell rows: no bash (make packages)");
   for (const { name, keys, status: want } of INTERACTIVE) {
     const before = await page.evaluate(() => window.terminalText());
     await page.evaluate(() => {

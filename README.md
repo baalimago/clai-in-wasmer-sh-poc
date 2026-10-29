@@ -1,7 +1,9 @@
 # clai in the browser, on WASIX v2
 
 [clai](https://github.com/baalimago/clai), a Go program, compiled for a Go port to WASIX v2 and
-run on wasmer's WASIX v2 kernel in a browser tab. The page is a terminal; type `clai h`.
+run on wasmer's WASIX v2 kernel in a browser tab. The page is a terminal over a small Linux-like
+machine whose `/bin` has clai, bash, coreutils, grep, sed, find, rg, fd and git from the Wasmer
+registry; type `ls /bin` or `clai h`.
 
 ```sh
 git clone --recurse-submodules --shallow-submodules https://github.com/baalimago/clai-in-wasmer-sh-poc
@@ -9,10 +11,12 @@ cd clai-in-wasmer-sh-poc
 make poc
 ```
 
-`make poc` builds everything, serves the page on http://localhost:5001 and opens it in your
-default browser. The first build takes a few minutes (the Go toolchain and the wasm kernel);
+`make poc` builds everything, downloads the registry packages that `web/packages.txt` lists
+(`make packages`, from registry.wasmer.io), serves the page on http://localhost:5001 and opens it
+in your default browser. The first build takes a few minutes (the Go toolchain and the wasm kernel);
 later ones take seconds. `make check` runs the same page in headless Chromium and checks that
-`clai h` and `clai help` print clai's usage.
+`clai h` and `clai help` print clai's usage, that clai reads its terminal, and that lines run
+in bash.
 
 ## Prerequisites
 
@@ -28,33 +32,40 @@ later ones take seconds. `make check` runs the same page in headless Chromium an
 
 ```
 browser tab
-├─ index.html: xterm.js and a tiny line editor (clai, export, clear, help)
+├─ index.html: xterm.js and a tiny line editor (each line runs as `bash -c`; cd, export, clear, help)
 └─ worker.js: a Web Worker running the WASIX v2 machine (web/src/lib.rs)
-   ├─ console: the terminal, as the machine's /dev/hvc0, while clai runs
-   ├─ clai.wasm: clai built with GOOS=wasix GOARCH=wasm
+   ├─ console: the terminal, as the machine's /dev/hvc0, while a line runs
+   ├─ /bin/clai: clai built with GOOS=wasix GOARCH=wasm
+   ├─ /bin/bash, /bin/ls, ...: registry packages (WASIX v1), on the kernel's v1 compatibility ABI
    └─ network: wasixv2-vnet-wisp, one WebSocket to the WISP proxy
                  └─ server.mjs: page, WISP proxy (wisp-js) and real TCP, on 127.0.0.1:5001
 ```
 
 | Path | What it is |
 | --- | --- |
-| `components/go` | The Go port: `GOOS=wasix GOARCH=wasm` on go1.26.10 ([baalimago/go](https://github.com/baalimago/go/tree/claude/project-thread-4y27nr)) |
+| `components/go` | The Go port: `GOOS=wasix GOARCH=wasm` on go1.26.10 ([baalimago/go](https://github.com/baalimago/go/tree/claude/project-thread-1nkwvt)) |
 | `components/wasixv2-abi` | The ABI and its code generators, including the Go backend that writes the port's syscall glue. Not needed for the build; it is here to regenerate that glue |
-| `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-l55h85)) |
+| `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-1nkwvt)) |
 | `components/clai` | clai itself, unchanged |
-| `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted, compiles a program once, runs it as often as asked |
+| `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted and clai and the packages in `/bin`, compiles each program once, runs a file as often as asked |
+| `web/src/packages.rs` | Installs webc packages as `wasmer run` does: commands in `/bin`, with their `wasi` annotations for v1 programs, and volumes where the package says |
+| `web/packages.txt`, `web/fetch-packages.mjs` | The registry packages, and the script that downloads them to `web/www/packages` |
 | `web/www` | The page, its worker and its line editor |
 | `web/server.mjs` | Serves the page and the WISP proxy on one port |
 | `web/check.mjs` | The headless check behind `make check` |
 
-While clai runs, what you type goes to the machine's console, a terminal whose line discipline
+Each line runs as a new `bash -c` in the directory the page's `cd` last chose, with what
+`export` set, so `cd` and `export` are the page's own. While a line runs, what you type goes to
+the machine's console, a terminal whose line discipline
 is the kernel's, as on Linux: clai's descriptors 0, 1 and 2 and its `/dev/tty` are that
 terminal, the kernel echoes and edits what you type, `^C` is SIGINT, and the window's size
-reaches clai as the terminal's. Between commands the page's own line editor reads the prompt.
+reaches the program as the terminal's. Between commands the page's own line editor reads the prompt.
 
 The machine runs in a Web Worker because Chrome compiles and instantiates a module over 8 MB
-(clai is 29 MB) synchronously only off the page's thread. One machine serves every command,
-so what clai writes under `~/.config` stays until the tab closes.
+(clai is 30 MB) synchronously only off the page's thread. One machine serves every command,
+so what clai writes under `~/.config` stays until the tab closes. Each program compiles once,
+on its first start. Processes take turns on the worker's one thread: one that computes holds
+the others up.
 
 ## What works
 
@@ -69,12 +80,18 @@ so what clai writes under `~/.config` stays until the tab closes.
   with a made-up key got Anthropic's `401 invalid x-api-key` back.
 - Interactive prompts: `clai setup`, `clai chat list` and the like read from the terminal, with
   the kernel editing the line as you type it, and `^C` stops clai.
+- Starting programs: Go's `os/exec` starts them through wasixv2's `spawn` (`posix_spawn` in one
+  call), with pipes, `Dir` and `Env`, and WASIX v1 programs start others as on wasmer's v1
+  runtime, so clai's shell tools and `-add-shell-context` can run `sh -c`, rg, find and git.
+  In Chromium this was checked with Go and WASI test programs in a local package; the
+  registry's bash and coreutils were not reachable where this was built, so `make check`'s
+  bash rows (pipes, `ls /bin`, `cd`) are still to be seen passing.
 
 ## What doesn't work yet
 
-- Starting other programs: the machine has no `/bin`, and there is no shell, so clai's shell
-  tools, `-add-shell-context`, glow and anything else that runs a subprocess fail.
-- Piping into clai: there is no shell, so stdin is always the terminal.
+- Each line is a new bash, so shell variables, functions and jobs do not outlive it; `cd` and
+  `export` are the page's. An interactive bash is the next step.
+- Guest threads run on the worker's one thread, so rg and fd search with one core.
 - `^C` kills clai rather than letting it clean up: the Go port cannot deliver signals to Go
   code yet, so `os/signal` never hears of SIGINT and its default action ends the process.
 - Files exist only in memory, for the life of the tab.

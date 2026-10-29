@@ -1,0 +1,10 @@
+# The Wasmer registry packages the machine has under /bin, earlier ones first: a command name
+# two packages share is the earlier one's. `make poc` downloads them (fetch-packages.mjs).
+wasmer/bash
+wasmer/coreutils@1.0.27
+wasmer/grep@3.12.0
+wasmer/sed@4.9.0
+wasmer/findutils@0.10.1
+wasmer/ripgrep@15.2.1
+wasmer/fd@10.5.1
+wasmer/git optional

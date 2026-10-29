@@ -1,16 +1,16 @@
 [submodule "components/go"]
 	path = components/go
 	url = https://github.com/baalimago/go.git
-	branch = claude/project-thread-4y27nr
+	branch = claude/project-thread-1nkwvt
 	shallow = true
 [submodule "components/wasixv2-abi"]
 	path = components/wasixv2-abi
 	url = https://github.com/baalimago/wasixv2-abi.git
-	branch = claude/project-thread-4y27nr
+	branch = claude/project-thread-1nkwvt
 [submodule "components/wasmer"]
 	path = components/wasmer
 	url = https://github.com/baalimago/wasmer.git
-	branch = claude/project-thread-l55h85
+	branch = claude/project-thread-1nkwvt
 	shallow = true
 [submodule "components/clai"]
 	path = components/clai

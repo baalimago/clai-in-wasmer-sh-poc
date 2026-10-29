@@ -293,6 +293,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasmer",
+ "webc",
 ]
 
 [[package]]
