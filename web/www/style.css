@@ -175,7 +175,5 @@ td:first-child { word-break: break-all; color: #fff; }
   .log .from { display: none; }
 }
 .notebook .inline { align-self: flex-start; margin-top: 4px; }
-.space { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 10px; border-radius: 8px; background: #fff7e6; color: var(--ink); }
-.space select { padding: 6px 8px; font: inherit; }
-.space .secondary { min-height: 32px; }
+.space select { flex: 1 1 200px; min-height: 44px; padding: 0 10px; font: inherit; }
 .recording { width: 100%; max-width: 560px; }

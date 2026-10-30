@@ -321,18 +321,20 @@ export class Minutes {
       return this.status(`slivingdoc could not list the login's spaces (exit ${status}).`);
     }
     const { names, chosen } = parseSpaces(body);
+    if (!chosen && names.length === 1) return this.chooseSpace(names[0], true);
     this.spaces = chosen ? null : names;
     this.render();
   }
 
-  async chooseSpace(name) {
+  // `followUp` when the login's only space is chosen without asking: the caller refreshes.
+  async chooseSpace(name, followUp = false) {
     const line = `slivingdoc space ${quote(name)} </dev/null >&2 && { echo credentials; cat ${CREDENTIALS}; } > /run/page/out`;
-    const { status, body } = await this.run(`Use space ${name}`, line, { topic: "credentials" });
+    const { status, body } = await this.run(`Use space ${name}`, line, { topic: "credentials", followUp });
     if (status !== 0 || !body) return this.status(`slivingdoc could not make ${name} the default space (exit ${status}).`);
     this.store.set(STORED_LOGIN, compact(body));
     this.spaces = null;
     this.render();
-    await this.refresh();
+    if (!followUp) await this.refresh();
   }
 
   // `slivingdoc login` in the machine: its sign-in page opens in `tab` (opened by the click,
@@ -403,7 +405,8 @@ export class Minutes {
 
   // Pulls the notebook when connected, then lists its meetings with their front matter.
   async refresh(followUp = false) {
-    const pull = this.connected ? "slivingdoc pull >&2 || echo pull-failed > /run/page/out; " : "";
+    // Until the login has a space, there is nothing to pull from.
+    const pull = this.connected && !this.spaces ? "slivingdoc pull >&2 || echo pull-failed > /run/page/out; " : "";
     const line = `${this.cd()} && ${pull}{ echo meetings; ` +
       "for f in $(find meetings/summaries -name '*.md' 2>/dev/null); do echo \"@@ $f\"; " +
       "sed -n '1{/^---$/!q};2,/^---$/p' \"$f\" | head -20; done; } > /run/page/out";

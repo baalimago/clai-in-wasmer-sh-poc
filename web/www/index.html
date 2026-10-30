@@ -34,11 +34,6 @@
         <div id="notebook-status">Notebook: on this machine</div>
         <code id="notebook-path">~/notebook/meetings/</code>
         <button id="connect" class="inline">Connect slivingdoc</button>
-        <form id="space-form" class="space" hidden>
-          <label for="space">Your login has no default space. Keep meetings in</label>
-          <select id="space"></select>
-          <button class="secondary">Use this space</button>
-        </form>
       </div>
     </nav>
 
@@ -51,6 +46,14 @@
           <div class="row">
             <input id="key-input" type="password" autocomplete="off" placeholder="sk-…">
             <button class="primary">Use key</button>
+          </div>
+        </form>
+        <form id="space-form" class="card space" hidden>
+          <label for="space"><strong>Choose a slivingdoc space</strong></label>
+          <p class="quiet">Your login reaches more than one space and has no default yet. Minutes keeps its meetings in the one you pick, and this browser remembers it.</p>
+          <div class="row">
+            <select id="space"></select>
+            <button class="primary">Use this space</button>
           </div>
         </form>
         <section id="notebook-card" class="card" hidden>
