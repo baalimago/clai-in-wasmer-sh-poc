@@ -8,3 +8,4 @@ wasmer/findutils@0.10.1
 wasmer/ripgrep@15.2.1
 wasmer/fd@10.5.1
 wasmer/git optional
+wasmer/ffmpeg@1.0.5

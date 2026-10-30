@@ -3,6 +3,7 @@
 //! programs, which the kernel's v1 compatibility ABI runs). The page runs programs on it one
 //! after another, so files they write (clai's config in `~/.config`) stay between runs.
 
+mod audio;
 mod packages;
 
 use std::collections::{HashMap, VecDeque};
@@ -39,8 +40,13 @@ pub struct Shell {
     signaller: Signaller,
     input: Arc<Input>,
     output: Output,
+    audio: Arc<audio::AudioFs>,
     notes: Vec<String>,
 }
+
+/// The page's audio inputs, files in `/run/audio`: the microphone, and the tab, window or
+/// screen the user shares.
+const AUDIO_INPUTS: [&str; 2] = ["mic", "tab"];
 
 /// Boots the machine; its traffic leaves through the WISP server at `wisp_url`, its TLS
 /// clients trust `ca_certificates`, a PEM bundle at `/etc/ssl/certs/ca-certificates.crt`, where
@@ -48,13 +54,18 @@ pub struct Shell {
 /// by `cols` that [`Shell::type_input`] types into. `/bin` holds `programs` (clai, the MCP
 /// server ports and the npx and uvx that start them) under `names`, and the commands of
 /// `packages`, webc v3 files, of which the earlier has a name two of them share; their volumes
-/// are mounted where the packages say.
+/// are mounted where the packages say. `/usr/local/bin`, first on `PATH`, holds `local_programs`
+/// under `local_names`: wrappers that come before the commands they wrap. The page's audio
+/// inputs are files in `/run/audio` (see [`audio`]).
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub async fn boot(
     wisp_url: String,
     ca_certificates: Vec<u8>,
     names: Vec<String>,
     programs: Vec<Uint8Array>,
+    local_names: Vec<String>,
+    local_programs: Vec<Uint8Array>,
     packages: Vec<Uint8Array>,
     rows: u16,
     cols: u16,
@@ -105,7 +116,32 @@ pub async fn boot(
         .mount("/etc/ssl/certs", Arc::new(certs), true)
         .await
         .map_err(|e| JsError::new(&format!("cannot mount /etc/ssl/certs: {e}")))?;
+    if local_names.len() != local_programs.len() {
+        return Err(JsError::new(&format!(
+            "{} local program names for {} programs",
+            local_names.len(),
+            local_programs.len()
+        )));
+    }
+    if !local_names.is_empty() {
+        let files = local_names
+            .into_iter()
+            .zip(local_programs.iter().map(|bytes| OwnedBuffer::from(bytes.to_vec())));
+        let local = PackageFs::from_files(files, 0, 0)
+            .map_err(|e| JsError::new(&format!("cannot hold /usr/local/bin: {e}")))?;
+        machine
+            .mount("/usr/local/bin", Arc::new(local), true)
+            .await
+            .map_err(|e| JsError::new(&format!("cannot mount /usr/local/bin: {e}")))?;
+    }
+    let names = AUDIO_INPUTS.map(String::from);
+    let audio = Arc::new(audio::AudioFs::new(&names).map_err(|e| JsError::new(&e.to_string()))?);
+    machine
+        .mount("/run/audio", audio.clone(), false)
+        .await
+        .map_err(|e| JsError::new(&format!("cannot mount /run/audio: {e}")))?;
     Ok(Shell {
+        audio,
         signaller: machine.signaller(),
         machine: Rc::new(machine),
         input,
@@ -155,6 +191,20 @@ impl Shell {
     /// discipline echoes and edits them, and turns `^C` into SIGINT.
     pub fn type_input(&self, bytes: &[u8]) {
         self.input.push(bytes);
+    }
+
+    /// The audio inputs whose files something has open, which the page should capture.
+    pub fn audio_wanted(&self) -> Vec<String> {
+        self.audio.open_inputs()
+    }
+
+    /// Audio the page captured from input `name`: 16-bit little-endian mono samples at 48 kHz.
+    pub fn push_audio(&self, name: &str, samples: &[u8]) -> Result<(), JsError> {
+        if self.audio.push(name, samples) {
+            Ok(())
+        } else {
+            Err(JsError::new(&format!("no audio input {name}")))
+        }
     }
 
     /// The terminal is now `rows` by `cols`; the console's foreground group gets SIGWINCH.

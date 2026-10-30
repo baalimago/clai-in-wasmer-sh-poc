@@ -46,9 +46,17 @@ $(WWW)/bin/launcher.sh: mcp/launcher.sh
 	@mkdir -p $(@D)
 	cp $< $@
 
-$(WWW)/bin/index.json: $(MCP_PORTS:%=$(WWW)/bin/%.wasm) $(WWW)/bin/launcher.sh
-	node -e 'const [ports, launchers] = process.argv.slice(1).map((s) => s.split(" ")); console.log(JSON.stringify([...ports.map((name) => ({ name, file: `bin/$${name}.wasm` })), ...launchers.map((name) => ({ name, file: "bin/launcher.sh" }))], null, 2))' \
-		"$(MCP_PORTS)" "$(LAUNCHERS)" > $@
+# Wrappers in /usr/local/bin, which comes before /bin on PATH: ffmpeg gives the registry's
+# ffmpeg the page's audio inputs as PulseAudio devices (audio/ffmpeg.sh).
+WRAPPERS := ffmpeg
+
+$(WWW)/bin/%.sh: audio/%.sh
+	@mkdir -p $(@D)
+	cp $< $@
+
+$(WWW)/bin/index.json: $(MCP_PORTS:%=$(WWW)/bin/%.wasm) $(WWW)/bin/launcher.sh $(WRAPPERS:%=$(WWW)/bin/%.sh)
+	node -e 'const [ports, launchers, wrappers] = process.argv.slice(1).map((s) => s.split(" ")); console.log(JSON.stringify([...ports.map((name) => ({ name, file: `bin/$${name}.wasm` })), ...launchers.map((name) => ({ name, file: "bin/launcher.sh" })), ...wrappers.map((name) => ({ name, file: `bin/$${name}.sh`, dir: "/usr/local/bin" }))], null, 2))' \
+		"$(MCP_PORTS)" "$(LAUNCHERS)" "$(WRAPPERS)" > $@
 
 # The roots the guest's TLS clients trust: Mozilla's, as the Node.js that serves the page bundles
 # them. The machine mounts them at /etc/ssl/certs/ca-certificates.crt.

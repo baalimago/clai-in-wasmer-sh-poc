@@ -1,6 +1,8 @@
 // Runs clai in the page in headless Chromium and checks that it printed its usage, that it
 // reads what is typed on its terminal, and, with bash installed, that lines run in bash, that
 // clai calls an MCP server uvx starts, and that its async commands run.
+import { readFile } from "node:fs/promises";
+
 import { chromium } from "playwright";
 
 import { startServer } from "./server.mjs";
@@ -60,6 +62,34 @@ const MCP = [
   },
 ];
 
+// The page's microphone is Chromium's fake one, which beeps. ffmpeg records it from the files in
+// /run/audio through the wrapper in /usr/local/bin, and clai runs the meeting-transcriber profile
+// with the test models: it lists the inputs, records the microphone and the (unshared, so silent)
+// tab for a few seconds, and transcribes the recording without the network.
+const MEETING = await readFile(new URL("../components/clai/examples/profiles/meeting-transcriber.json", import.meta.url), "utf8");
+const AUDIO_CONFIG = JSON.stringify({
+  transcribe: { model: "test" },
+  capture: { dir: "/tmp/rec", "max-seconds": 4, "silence-timeout": 0, calibrated: true },
+});
+const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
+const AUDIO = [
+  { line: "ls /run/audio", status: 0, prints: "mic" },
+  { line: "ffmpeg -hide_banner -sources pulse", status: 0, prints: "browser-tab.monitor" },
+  {
+    line: "ffmpeg -hide_banner -nostdin -loglevel error -f pulse -i browser-mic -t 2 -ac 1 -ar 16000 -y /tmp/mic.wav && echo bytes=$(wc -c < /tmp/mic.wav)",
+    status: 0,
+    prints: "bytes=64",
+  },
+  { line: `printf '%s' ${quote(MEETING)} > /tmp/meeting.json`, status: 0, prints: "" },
+  { line: `printf '%s' ${quote(AUDIO_CONFIG)} > "$(clai confdir)/audioConfig.json"`, status: 0, prints: "" },
+  {
+    line: "CLAI_MOCK_AUDIO_TRANSCRIBE_FILE=/tmp/mic.wav clai -cm mock_test -prp /tmp/meeting.json " +
+      "q tool_audio_sources tool_audio_record tool_audio_transcribe 2>&1 | cat",
+    status: 0,
+    prints: "recorded: /tmp/rec/",
+  },
+];
+
 // `clai setup` asks for a category on /dev/tty. `keys` are typed once it does.
 const INTERACTIVE = [
   // The terminal's line editing: the x is erased before clai reads the line, so it quits.
@@ -69,9 +99,12 @@ const INTERACTIVE = [
 ];
 
 const server = await startServer();
-const browser = await chromium.launch();
+const browser = await chromium.launch({
+  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
+});
 try {
-  const page = await browser.newPage();
+  const context = await browser.newContext({ permissions: ["microphone"] });
+  const page = await context.newPage();
   page.on("pageerror", (error) => console.error("page error:", error.message));
   await page.goto(`http://localhost:${server.address().port}/`);
   await page.waitForSelector("body[data-ready]", { timeout: 120_000 });
@@ -96,7 +129,7 @@ try {
       process.exitCode = 1;
     }
   }
-  for (const { line, status: want, prints } of bash ? MCP : []) {
+  for (const { line, status: want, prints } of bash ? [...MCP, ...AUDIO] : []) {
     const before = await page.evaluate(() => window.terminalText());
     const status = await page.evaluate((line) => window.runCommand(line), line);
     const printed = (await page.evaluate(() => window.terminalText())).slice(before.length);
