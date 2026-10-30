@@ -11,6 +11,8 @@ set -euo pipefail
 go=$1 mod=$(cd "$2" && pwd) out=$3
 here=$(cd "$(dirname "$0")" && pwd)
 
+# list -m leaves Dir empty until the module is in the cache.
+(cd "$mod" && GOTOOLCHAIN=local "$go" mod download golang.org/x/sys)
 orig=$(cd "$mod" && GOTOOLCHAIN=local "$go" list -m -f '{{.Dir}}' golang.org/x/sys)
 portsys=$("$go" env GOROOT)/src/syscall
 rm -rf "$out"
