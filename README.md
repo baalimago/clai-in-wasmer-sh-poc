@@ -98,7 +98,9 @@ the others up.
 
 - `clai h`, `clai help`, `clai version`, `clai confdir` and anything else that only prints.
 - Name lookups, TCP and HTTPS: the guest resolves names through the WISP proxy, and its
-  connections go out through the proxy's host. TLS clients trust Mozilla's roots, which
+  connections go out through the proxy's host. If the page's WebSocket to the proxy closes (the
+  server restarted, the laptop slept), connections fail until it reopens, which it does on
+  its own within half a second to 30 seconds. TLS clients trust Mozilla's roots, which
   `make` writes to `web/www/ca-certificates.crt` from the Node.js running the build, and the
   machine mounts at `/etc/ssl/certs/ca-certificates.crt`. So
   `export OPENAI_API_KEY=sk-...` then `clai -cm gpt-4o q hello` makes a live query. Where this
