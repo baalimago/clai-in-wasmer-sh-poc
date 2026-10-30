@@ -115,6 +115,7 @@ const AUDIO = [
     status: 0,
     prints: "bytes=64",
   },
+  { line: "play /tmp/mic.wav", status: 0, prints: "in the player" },
   { line: `printf '%s' ${quote(MEETING)} > /tmp/meeting.json`, status: 0, prints: "" },
   { line: writeAudioConfig(4), status: 0, prints: "" },
   { line: `${RECORD} 2>&1 | cat`, status: 0, prints: "stopped_because: max_seconds" },
@@ -171,6 +172,20 @@ try {
     }
   }
   if (!bash) console.log("\nskipped the shell and MCP rows: no bash (make packages)");
+  // `play` put the 2 s recording in a player the browser can decode.
+  if (bash) {
+    const seconds = await page.evaluate(async () => {
+      const element = document.querySelector(".player audio");
+      if (!element) return 0;
+      if (element.readyState < 1) await new Promise((loaded) => (element.onloadedmetadata = loaded));
+      return element.duration;
+    });
+    console.log(`player: ${seconds} s`);
+    if (!(Math.abs(seconds - 2) < 0.1)) {
+      console.error(`\nFAIL: play: the page's player holds ${seconds} s, want 2 s`);
+      process.exitCode = 1;
+    }
+  }
   for (const { name, keys, status: want } of INTERACTIVE) {
     const before = await page.evaluate(() => window.terminalText());
     await page.evaluate(() => {

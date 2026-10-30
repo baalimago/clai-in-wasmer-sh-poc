@@ -207,6 +207,11 @@ impl Shell {
         }
     }
 
+    /// The sound files written to `/run/audio/play` since the last call, for the page to play.
+    pub fn take_played(&self) -> Vec<Uint8Array> {
+        self.audio.take_played().iter().map(|s| Uint8Array::from(s.as_slice())).collect()
+    }
+
     /// The terminal is now `rows` by `cols`; the console's foreground group gets SIGWINCH.
     pub fn resize(&self, rows: u16, cols: u16) {
         self.signaller.console_resize(window_size(rows, cols));

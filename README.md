@@ -50,6 +50,7 @@ browser tab
    ├─ /bin/slivingdoc-git2: libgit2 compiled to WASI, which slivingdoc runs its git operations in
    ├─ /bin/ffmpeg, /bin/ffprobe: ffmpeg 5.1.6 for wasm32-wasi (audio/ffmpeg)
    ├─ /usr/local/bin/ffmpeg: audio/ffmpeg.sh, which gives ffmpeg the page's audio as pulse devices
+   ├─ /usr/local/bin/play: audio/play.sh, which plays a sound file in the page
    ├─ /run/audio/mic, /run/audio/tab: the page's microphone and shared tab audio (web/src/audio.rs)
    ├─ /bin/bash, /bin/ls, ...: registry packages (WASIX v1), on the kernel's v1 compatibility ABI
    └─ network: wasixv2-vnet-wisp, one WebSocket to the WISP proxy
@@ -69,6 +70,7 @@ browser tab
 | `mcp/slivingdoc` | What slivingdoc needs on wasix: its libgit2 helper and the Go files and `x/sys` that build it for the port (see [slivingdoc and libgit2](#slivingdoc-and-libgit2)) |
 | `mcp/launcher.sh` | `npx` and `uvx`: run the packages that have a port in `/bin`, and say so for the others |
 | `audio/ffmpeg/build.sh` | Builds ffmpeg and ffprobe for wasm32-wasi with the wasi-sdk: audio only, without threads |
+| `audio/play.sh` | `play FILE`: writes the file to `/run/audio/play`, and the page plays it in a player at the bottom right |
 | `audio/ffmpeg.sh` | The `ffmpeg` in `/usr/local/bin`: lists and opens the page's audio inputs as PulseAudio devices, and stops a recording cleanly |
 | `web/src/audio.rs` | `/run/audio`: the page's audio inputs as files that stream while they are open |
 | `web/www/audio.js` | Captures the microphone and a shared tab's audio for those files |
@@ -158,6 +160,9 @@ so a mic and tab recording stay in step. `/usr/local/bin/ffmpeg` (`audio/ffmpeg.
 `-sources pulse` and `-sinks pulse` with those names and turns `-f pulse -i NAME` into the raw
 file. On SIGINT it writes to the input files, which ends them, so ffmpeg reads to the end and
 finishes the WAV as it would on SIGINT: this ffmpeg is plain WASI and cannot catch signals.
+
+`play /tmp/t.wav` plays a recording back: whatever is written to `/run/audio/play` goes, once the
+file is closed, to a player in the page, and the browser decodes it.
 
 ffmpeg is 5.1.6 built with the wasi-sdk for wasm32-wasi, without threads and audio only (WAV, MP3,
 AAC/M4A, Ogg/Opus/Vorbis, FLAC, Matroska in; WAV and FLAC out; the filters clai uses). The

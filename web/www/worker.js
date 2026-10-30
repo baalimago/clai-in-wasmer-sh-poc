@@ -66,6 +66,7 @@ onmessage = async ({ data: { path, args, env, input, size, samples } }) => {
   const drain = () => {
     const bytes = shell.take_output();
     if (bytes.length > 0) post({ output: bytes });
+    for (const sound of shell.take_played()) post({ play: sound });
     audio();
   };
   const timer = setInterval(drain, 30);

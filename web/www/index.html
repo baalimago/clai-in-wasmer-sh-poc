@@ -7,8 +7,12 @@
   #terminal { height: 100%; padding: 8px; box-sizing: border-box; }
   .share-audio { position: fixed; top: 12px; right: 12px; padding: 10px 14px; font: 14px sans-serif;
     border: 0; border-radius: 6px; background: #3b82f6; color: white; cursor: pointer; }
+  .players { position: fixed; bottom: 12px; right: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .player { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 6px; background: #333; }
+  .player button { border: 0; background: none; color: #ccc; font: 16px sans-serif; cursor: pointer; }
 </style>
 <div id="terminal"></div>
+<div class="players"></div>
 <script type="module">
   import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
   import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
@@ -33,6 +37,25 @@
     (name, bytes) => worker.postMessage({ samples: { name, bytes } }, [bytes.buffer]),
     (text) => term.write(`\r\n\x1b[33m${text}\x1b[0m\r\n`),
   );
+  // What `play` (audio/play.sh) wrote to /run/audio/play, in a player until it is closed.
+  const play = (bytes) => {
+    const url = URL.createObjectURL(new Blob([bytes]));
+    const player = document.createElement("div");
+    player.className = "player";
+    const element = new Audio(url);
+    element.controls = true;
+    const close = document.createElement("button");
+    close.textContent = "✕";
+    close.title = "Close";
+    close.onclick = () => {
+      element.pause();
+      URL.revokeObjectURL(url);
+      player.remove();
+    };
+    player.append(element, close);
+    document.querySelector(".players").append(player);
+    element.play().catch(() => {});
+  };
   worker.onerror = (event) => term.writeln(`\x1b[31mworker failed: ${event.message}\x1b[0m`);
   const { bash, home } = await new Promise((ready) => {
     worker.onmessage = ({ data }) => {
@@ -40,6 +63,7 @@
       if (data.ready) ready(data);
       if (data.output) term.write(data.output);
       if (data.audio) audio.want(data.audio);
+      if (data.play) play(data.play);
       if (data.error) term.writeln(`\x1b[31m${data.error}\x1b[0m`);
       if ("status" in data) finished(data.status);
     };
@@ -81,6 +105,7 @@
         : "clai <args>         run clai on the WASIX v2 machine\r\n") +
       "cd DIR              change the directory the next lines start in\r\n" +
       "export KEY=VALUE    set a variable for every program, such as OPENAI_API_KEY\r\n" +
+      (bash ? "play FILE           play a sound file, such as a recording, in the page\r\n" : "") +
       "clear               clear the screen"),
     clear: () => term.clear(),
     export: (...assignments) => {

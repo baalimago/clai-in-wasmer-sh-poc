@@ -90,8 +90,9 @@ $(WWW)/bin/launcher.sh: mcp/launcher.sh
 	cp $< $@
 
 # Wrappers in /usr/local/bin, which comes before /bin on PATH: ffmpeg gives /bin/ffmpeg the
-# page's audio inputs as PulseAudio devices (audio/ffmpeg.sh).
-WRAPPERS := ffmpeg
+# page's audio inputs as PulseAudio devices (audio/ffmpeg.sh); play plays sound files in the page
+# (audio/play.sh).
+WRAPPERS := ffmpeg play
 
 # ffmpeg and ffprobe for wasm32-wasi, built with the wasi-sdk from an ffmpeg release: audio only
 # and without threads (audio/ffmpeg/build.sh). Both are in /bin.

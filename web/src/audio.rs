@@ -4,6 +4,8 @@
 //! captured and get end of file, which is how a recording stops cleanly (see `audio/ffmpeg.sh`).
 //! A read waits until there is audio. The page captures an input only while something has its
 //! file open for reading ([`AudioFs::open_inputs`]), and feeds it with [`AudioFs::push`].
+//! `/run/audio/play` goes the other way: what is written to it, once closed, is a sound file
+//! for the page to play ([`AudioFs::take_played`]).
 
 use std::any::Any;
 use std::collections::VecDeque;
@@ -24,11 +26,17 @@ const MAX_BUFFERED: usize = 30 * SAMPLE_RATE as usize * 2;
 const AUDIO_MAGIC: u32 = 0x6175_6469;
 const ROOT_INO: u64 = 1;
 const NAME_MAX: usize = 255;
+const PLAY: &str = "play";
+/// The largest sound file `play` takes: 64 MiB, ten minutes of 48 kHz stereo WAV and more.
+const MAX_PLAYED: usize = 64 << 20;
 
 /// The inputs, in the order the page names them.
 pub struct AudioFs {
     inputs: Arc<[Arc<Input>]>,
+    played: Played,
 }
+
+type Played = Arc<Mutex<Vec<Vec<u8>>>>;
 
 /// One input: what it captured that its readers have not read yet.
 struct Input {
@@ -73,6 +81,7 @@ impl AudioFs {
                 && name.len() <= NAME_MAX
                 && name != "."
                 && name != ".."
+                && name != PLAY
                 && !name.bytes().any(|b| b == b'/' || b == 0)
                 && !inputs.iter().any(|i: &Arc<Input>| &i.name == name);
             if !valid {
@@ -86,6 +95,7 @@ impl AudioFs {
         }
         Ok(Self {
             inputs: inputs.into(),
+            played: Played::default(),
         })
     }
 
@@ -96,6 +106,11 @@ impl AudioFs {
             .filter(|i| i.state.lock().unwrap().readers > 0)
             .map(|i| i.name.clone())
             .collect()
+    }
+
+    /// The sound files written to `play` since the last call, oldest first.
+    pub fn take_played(&self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut *self.played.lock().unwrap())
     }
 
     /// Hands `samples` captured from input `name` to its readers; dropped when nothing reads
@@ -132,7 +147,7 @@ impl Filesystem for AudioFs {
     }
 
     fn root(&self) -> Arc<dyn Node> {
-        Arc::new(Root(self.inputs.clone()))
+        Arc::new(Root(self.inputs.clone(), self.played.clone()))
     }
 
     async fn statfs(&self) -> FsResult<StatFs> {
@@ -141,7 +156,7 @@ impl Filesystem for AudioFs {
             blocks: 0,
             blocks_free: 0,
             blocks_avail: 0,
-            files: self.inputs.len() as u64 + 1,
+            files: self.inputs.len() as u64 + 2,
             files_free: 0,
             name_max: NAME_MAX as u32,
             fragment_size: 4096,
@@ -170,7 +185,13 @@ fn attr(ino: u64, file_type: FileType, mode: u32) -> Attr {
     }
 }
 
-struct Root(Arc<[Arc<Input>]>);
+struct Root(Arc<[Arc<Input>]>, Played);
+
+impl Root {
+    fn play_ino(&self) -> u64 {
+        ROOT_INO + 1 + self.0.len() as u64
+    }
+}
 
 #[async_trait(?Send)]
 impl Node for Root {
@@ -195,16 +216,19 @@ impl Node for Root {
     }
 
     async fn lookup(&self, name: &[u8]) -> FsResult<Arc<dyn Node>> {
+        if name == PLAY.as_bytes() {
+            return Ok(Arc::new(PlayNode(self.play_ino(), self.1.clone())));
+        }
         let input = self.0.iter().find(|i| i.name.as_bytes() == name);
         Ok(Arc::new(InputNode(input.ok_or(Errno::ENOENT)?.clone())))
     }
 
     async fn open(&self, _options: OpenOptions) -> FsResult<Box<dyn Handle>> {
-        Ok(Box::new(RootHandle(self.0.clone())))
+        Ok(Box::new(RootHandle(self.0.clone(), self.play_ino())))
     }
 }
 
-struct RootHandle(Arc<[Arc<Input>]>);
+struct RootHandle(Arc<[Arc<Input>]>, u64);
 
 #[async_trait(?Send)]
 impl Handle for RootHandle {
@@ -218,8 +242,16 @@ impl Handle for RootHandle {
                 next: i as u64 + 1,
             };
             if !sink.push(entry) {
-                break;
+                return Ok(());
             }
+        }
+        if start <= self.0.len() {
+            sink.push(DirEntry {
+                name: PLAY.as_bytes(),
+                ino: self.1,
+                file_type: FileType::Regular,
+                next: self.0.len() as u64 + 1,
+            });
         }
         Ok(())
     }
@@ -327,6 +359,82 @@ impl Handle for Ender {
     }
 
     /// `>` truncates before it writes.
+    async fn set_size(&self, _size: u64) -> FsResult<()> {
+        Ok(())
+    }
+}
+
+/// `play`: a write-only file whose content, once closed, the page plays.
+struct PlayNode(u64, Played);
+
+#[async_trait(?Send)]
+impl Node for PlayNode {
+    fn ino(&self) -> u64 {
+        self.0
+    }
+
+    fn file_type(&self) -> FileType {
+        FileType::Regular
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    async fn getattr(&self) -> FsResult<Attr> {
+        Ok(attr(self.0, FileType::Regular, 0o222))
+    }
+
+    async fn setattr(&self, _attr: &SetAttr) -> FsResult<Attr> {
+        self.getattr().await
+    }
+
+    async fn open(&self, options: OpenOptions) -> FsResult<Box<dyn Handle>> {
+        if !options.write {
+            return Err(Errno::EACCES);
+        }
+        Ok(Box::new(Player {
+            sound: Mutex::default(),
+            played: self.1.clone(),
+        }))
+    }
+}
+
+struct Player {
+    sound: Mutex<Vec<u8>>,
+    played: Played,
+}
+
+impl Player {
+    fn add(&self, data: &[u8]) -> FsResult<usize> {
+        let mut sound = self.sound.lock().unwrap();
+        if sound.len() + data.len() > MAX_PLAYED {
+            return Err(Errno::EFBIG);
+        }
+        sound.extend_from_slice(data);
+        Ok(data.len())
+    }
+}
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        let sound = std::mem::take(&mut *self.sound.lock().unwrap());
+        if !sound.is_empty() {
+            self.played.lock().unwrap().push(sound);
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl Handle for Player {
+    async fn write_at(&self, data: &[u8], _offset: u64) -> FsResult<usize> {
+        self.add(data)
+    }
+
+    async fn append(&self, data: &[u8]) -> FsResult<(u64, usize)> {
+        Ok((0, self.add(data)?))
+    }
+
     async fn set_size(&self, _size: u64) -> FsResult<()> {
         Ok(())
     }
