@@ -16,3 +16,11 @@
 	path = components/clai
 	url = https://github.com/baalimago/clai.git
 	branch = main
+[submodule "components/slivingdoc"]
+	path = components/slivingdoc
+	url = https://github.com/baalimago/slivingdoc.git
+	shallow = true
+[submodule "components/libgit2"]
+	path = components/libgit2
+	url = https://github.com/libgit2/libgit2.git
+	shallow = true

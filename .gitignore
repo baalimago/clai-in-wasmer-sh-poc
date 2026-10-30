@@ -6,3 +6,4 @@
 /web/www/ca-certificates.crt
 /web/www/packages/
 /web/www/bin/
+/.build/

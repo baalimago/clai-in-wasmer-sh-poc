@@ -1,6 +1,7 @@
 // Runs clai in the page in headless Chromium and checks that it printed its usage, that it
 // reads what is typed on its terminal, and, with bash installed, that lines run in bash, that
-// clai calls an MCP server uvx starts, and that its async commands run.
+// clai calls an MCP server uvx starts, that its async commands run, and that slivingdoc serves
+// with libgit2 behind it.
 import { chromium } from "playwright";
 
 import { startServer } from "./server.mjs";
@@ -43,6 +44,22 @@ const MCP = [
     prints: '"name":"ddg-search"',
   },
   { line: "npx -y left-pad@1.3.0", status: 127, prints: "left-pad is not available" },
+  // slivingdoc-git2 answers a version request (op 3, framed as length 1) with libgit2's: 1.9.6.
+  {
+    line: "printf '\\001\\000\\000\\000\\003' | slivingdoc-git2 | od -An -tx1 | tr -d ' \\n'",
+    status: 0,
+    prints: "0d00000000010000000900000006000000",
+  },
+  { line: "npx -y slivingdoc@1.3.1 version", status: 0, prints: "slivingdoc 1.3.1" },
+  // serve stops at the end of its input, so the input stays open until it has answered.
+  {
+    line:
+      `(printf '%s\\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18",` +
+      `"capabilities":{},"clientInfo":{"name":"check","version":"1"}}}'; sleep 3) | ` +
+      `npx -y slivingdoc@1.3.1 serve 2>/dev/null | grep -o '"serverInfo":{"name":"slivingdoc"'`,
+    status: 0,
+    prints: '"serverInfo":{"name":"slivingdoc"',
+  },
   { line: `printf '%s' '${PROFILE}' > /tmp/mcp.json`, status: 0, prints: "" },
   {
     line: "clai -profile-path /tmp/mcp.json -cm test query tool_mcp_ddg_search 2>&1 | cat",

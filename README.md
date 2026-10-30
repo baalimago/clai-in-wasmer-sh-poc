@@ -17,7 +17,8 @@ make poc
 in your default browser. The first build takes a few minutes (the Go toolchain and the wasm kernel);
 later ones take seconds. `make check` runs the same page in headless Chromium and checks that
 `clai h` and `clai help` print clai's usage, that clai reads its terminal, that lines run
-in bash, that clai calls an MCP server that `uvx` starts, and that its async commands run.
+in bash, that clai calls an MCP server that `uvx` starts, that its async commands run, and that
+slivingdoc serves with libgit2 behind it.
 
 ## Prerequisites
 
@@ -25,6 +26,8 @@ in bash, that clai calls an MCP server that `uvx` starts, and that its async com
 - [rustup](https://rustup.rs); `web/rust-toolchain.toml` pulls Rust 1.96 and the
   `wasm32-unknown-unknown` target on first use
 - Node.js 20 or later
+- CMake 3.16 or later and curl, for libgit2: the build downloads the
+  [wasi-sdk](https://github.com/WebAssembly/wasi-sdk) 25 into `.tools/` to compile it
 - Chrome or Edge 137 or later, for JavaScript Promise Integration (JSPI)
 
 `wasm-bindgen` is installed into `.tools/` at the version the page's crate needs.
@@ -39,6 +42,8 @@ browser tab
    ├─ /bin/clai: clai built with GOOS=wasix GOARCH=wasm
    ├─ /bin/npx, /bin/uvx: mcp/launcher.sh, which starts the MCP server ports below
    ├─ /bin/duckduckgo-mcp-server: mcp/duckduckgo-mcp-server, built like clai
+   ├─ /bin/slivingdoc: slivingdoc's release, built like clai with mcp/slivingdoc laid over it
+   ├─ /bin/slivingdoc-git2: libgit2 compiled to WASI, which slivingdoc runs its git operations in
    ├─ /bin/bash, /bin/ls, ...: registry packages (WASIX v1), on the kernel's v1 compatibility ABI
    └─ network: wasixv2-vnet-wisp, one WebSocket to the WISP proxy
                  └─ server.mjs: page, WISP proxy (wisp-js) and real TCP, on 127.0.0.1:5001
@@ -50,7 +55,9 @@ browser tab
 | `components/wasixv2-abi` | The ABI and its code generators, including the Go backend that writes the port's syscall glue. Not needed for the build; it is here to regenerate that glue |
 | `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-1nkwvt)) |
 | `components/clai` | clai itself, unchanged |
+| `components/slivingdoc`, `components/libgit2` | slivingdoc v1.3.1 and the libgit2 v1.9.6 it pins, unchanged |
 | `mcp/duckduckgo-mcp-server` | A Go port of [duckduckgo-mcp-server](https://github.com/nickclyde/duckduckgo-mcp-server) 0.7.0: its tools, arguments, output and `DDG_*` settings |
+| `mcp/slivingdoc` | What slivingdoc needs on wasix: its libgit2 helper and the Go files and `x/sys` that build it for the port (see [slivingdoc and libgit2](#slivingdoc-and-libgit2)) |
 | `mcp/launcher.sh` | `npx` and `uvx`: run the packages that have a port in `/bin`, and say so for the others |
 | `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted and clai and the packages in `/bin`, compiles each program once, runs a file as often as asked |
 | `web/src/packages.rs` | Installs webc packages as `wasmer run` does: commands in `/bin`, with their `wasi` annotations for v1 programs, and volumes where the package says |
@@ -113,12 +120,48 @@ version. `cchub:clai/researcher` starts:
 | Server | Command | Here |
 | --- | --- | --- |
 | ddg | `uvx duckduckgo-mcp-server==0.7.0` | Runs the Go port: `search`, `fetch_content` and `expand_link` give the Python server's output, and a live search answers from the page |
-| slivingdoc | `npx -y slivingdoc@1.3.1 serve ...` | No port yet: slivingdoc is Go, but its git engine is libgit2 through cgo, which Go's wasm targets lack. The profile marks it optional, so clai warns and runs without it |
+| slivingdoc | `npx -y slivingdoc@1.3.1 serve ...` | Runs slivingdoc 1.3.1 itself, with libgit2 1.9.6 in a helper process (below) |
 
 The Go port has no threads, so a blocking read stops every goroutine. An MCP server reading
 its requests from a pipe on stdin would stop the goroutine answering the request it just
 read, so the ddg port puts stdin in the netpoller (`mcp/duckduckgo-mcp-server/stdin_unix.go`).
 Any other Go MCP server built for the machine needs the same.
+
+### slivingdoc and libgit2
+
+slivingdoc (`components/slivingdoc`, at its v1.3.1 tag) is Go, and its git engine is libgit2
+through cgo, which the Go port does not have. Its `internal/git2` package is the only libgit2
+boundary: twenty seam functions, one per libgit2 operation. So the machine runs libgit2 in a
+process of its own:
+
+- `mcp/slivingdoc/git2/helper.c` is `/bin/slivingdoc-git2`: libgit2 1.9.6
+  (`components/libgit2`), compiled to WASI with the wasi-sdk and linked into a small program
+  that runs one operation per request on stdin and answers on stdout. It runs on the kernel's
+  WASIX v1 layer, like bash. `mcp/slivingdoc/git2/wasi/` has the few POSIX headers and calls
+  libgit2 names that WASI leaves out, for paths slivingdoc never takes (network transports,
+  child processes); they fail as a host without them would.
+- `mcp/slivingdoc/native_wasix.go` takes the place of slivingdoc's cgo file on wasix: the same
+  seam functions, each one request to the helper, which it starts at libgit2's init.
+- `mcp/slivingdoc/stdin_wasix.go` puts slivingdoc's stdin in the netpoller, as above.
+- `mcp/slivingdoc/wasix.sh` lays those files over the checkout with `go build -overlay`, so it
+  stays at the release, and gives the build a copy of `golang.org/x/sys` that builds for wasix
+  (its `unix` package is linux's, and the port is linux/loong64's types with riscv32's
+  system call numbers, so the loong64 files serve, renumbered).
+
+slivingdoc's own `internal/git2` tests pass through the helper, natively and in the page,
+except two that cannot: libgit2 here is built without threads, and a test that reads the
+source tree for `os/exec` finds the helper's. To run them natively, build the helper with the
+host's compiler against a native libgit2 and run
+`CGO_ENABLED=0 go test -tags git2helper ./internal/git2/` in a checkout with
+`native_wasix.go` copied in and the helper on `PATH`.
+
+slivingdoc keeps the notebook in its hosted storage or an S3 bucket. Without a credential,
+`serve` signs in on the first tool call: it prints an approval link on its stderr and waits.
+`slivingdoc login` in the page does the same up front, and the login it stores serves the
+servers clai starts afterwards. With a credential, pull, commit, log and slivingdoc's three-way
+merges, conflict markers included, run in the page: two writers in it, against slivingdoc's
+reference storage server (`internal/httpstore/gatewaytest`) also in it, pull, commit and
+conflict as they do natively.
 
 ## What doesn't work yet
 
@@ -130,6 +173,8 @@ Any other Go MCP server built for the machine needs the same.
 - Files exist only in memory, for the life of the tab.
 - `npx` and `uvx` run only the ports in `/bin`: there is no Node.js or Python package
   installation (see [MCP servers](#mcp-servers)).
+- slivingdoc's login lives in the machine's memory like every other file, so a reloaded page
+  signs in again.
 - `fetch_content` refuses addresses that are not public, as the Python server does, so a
   network whose DNS answers with private addresses (a VPN's fake IPs in 198.18.0.0/15, say)
   needs `DDG_ALLOW_PRIVATE_URLS=1`.
