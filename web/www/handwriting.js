@@ -150,6 +150,7 @@ export class Handwriting {
       const at = unit.closest(BLOCKS);
       if (at !== block) {
         if (block) await this.lift(160 + delay * 4);
+        if (job.cancelled) return;
         block = at;
       }
       this.show(unit, true);

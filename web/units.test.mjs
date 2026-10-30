@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import { Machine, describe, label, mask } from "./www/hood.js";
 import { notePath, renderMarkdown } from "./www/markdown.js";
+import { wrapWords } from "./www/doodles.js";
 import {
   accountOf, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, replyText, splitMessage, summariesIn,
@@ -178,4 +179,20 @@ test("a message names its topic on its first line, and its body stays bytes", ()
   assert.equal(topic, "recording-part");
   assert.deepEqual([...body], [0, 10, 255]);
   assert.deepEqual(splitMessage(new TextEncoder().encode("recording-end")).body.length, 0);
+});
+
+test("a scribbled log line wraps at spaces instead of being cut", () => {
+  const line = "exec: clai q Answer who Speaker A is, then write the summary · pid 31";
+  const lines = wrapWords(line, 24, 8);
+  assert.equal(lines.join(" "), line);
+  assert.ok(lines.every((l) => l.length <= 24));
+});
+
+test("a scribbled word longer than a line breaks across lines", () => {
+  assert.deepEqual(wrapWords("fs: /home/user/notebook/meetings", 12, 8), ["fs:", "/home/user/n", "otebook/meet", "ings"]);
+});
+
+test("a scribbled log line past the last rule ends in an ellipsis", () => {
+  const lines = wrapWords("a b c d e f g h", 3, 2);
+  assert.deepEqual(lines, ["a b", "c …"]);
 });

@@ -1,13 +1,15 @@
-// While the agent transcribes, summarizes and saves a recording, the pencil doodles on the empty
-// part of the pad: loops, stars, cubes, clouds, and now and then a line from the machine's own
-// event log (what the peek shows), scribbled on a rule and boxed, circled or crossed out. It
-// starts when the recording bar gets the class "summarizing" and rubs everything out when the
-// class goes.
+// While the agent starts, and while it transcribes, summarizes and saves a recording, the pencil
+// doodles on the empty part of the pad: loops, stars, cubes, clouds, and now and then a line from
+// the machine's own event log (what the peek shows), scribbled over as many rules as it takes and
+// boxed, circled or crossed out. It runs while the recording bar has the class "waiting" or
+// "summarizing", and rubs everything out when neither is left.
 
 const SVG = "http://www.w3.org/2000/svg";
 const RULE = 32;
 const BASE = 24;
-const MAX_CHARS = 52;
+// A log line wraps onto the next rule past this many letters, as far as this many rules.
+const LINE_CHARS = 46;
+const MAX_LINES = 8;
 
 const PENCIL = `<g transform="scale(.6) rotate(28)">
   <path d="M0 0 L29 -8 L29 8 Z" fill="#e8c592"/><path d="M0 0 L8 -2.2 L8 2.2 Z" fill="#333"/>
@@ -23,6 +25,31 @@ const ellipse = (cx, cy, rx, ry) => {
     ` C${pt(cx + rx, cy + k * ry)} ${pt(cx + k * rx, cy + ry)} ${pt(cx, cy + ry)}` +
     ` C${pt(cx - k * rx, cy + ry)} ${pt(cx - rx, cy + k * ry)} ${pt(cx - rx, cy)}` +
     ` C${pt(cx - rx, cy - k * ry)} ${pt(cx - k * rx, cy - ry - 3)} ${pt(cx + rx * 0.3, cy - ry + 2)}`;
+};
+// Splits text into lines of at most `width` letters at spaces, breaking a longer word, in at
+// most `max` lines; the last one ends in "…" if the text is longer still.
+export const wrapWords = (text, width, max) => {
+  const lines = [];
+  let line = "";
+  for (let word of text.split(/\s+/).filter(Boolean)) {
+    while (word.length > width) {
+      if (line) lines.push(line);
+      lines.push(word.slice(0, width));
+      word = word.slice(width);
+      line = "";
+    }
+    if (line && line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length <= max) return lines;
+  const kept = lines.slice(0, max);
+  kept[max - 1] = `${kept[max - 1].slice(0, width - 1)}…`;
+  return kept;
 };
 const rand = (lo, hi) => lo + Math.random() * (hi - lo);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -65,7 +92,7 @@ export class Doodles {
     const bar = this.doc.querySelector("#recbar");
     if (!bar || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const check = () => {
-      const on = bar.classList.contains("summarizing") && !bar.hidden;
+      const on = (bar.classList.contains("waiting") || bar.classList.contains("summarizing")) && !bar.hidden;
       if (on && !this.layer) this.begin();
       if (!on && this.layer) this.end();
     };
@@ -142,8 +169,7 @@ export class Doodles {
     if (!pool.length) return null;
     const e = fresh.length ? fresh[0] : pick(pool);
     this.seen.add(e);
-    const text = `${e.kind}: ${e.text}`;
-    return text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS - 1)}…` : text;
+    return `${e.kind}: ${e.text}`;
   }
 
   async loop(run) {
@@ -172,34 +198,60 @@ export class Doodles {
     return true;
   }
 
-  async scribble(line, live) {
+  async scribble(entry, live) {
     const g = this.group({ x: 0, y: 0 });
-    const text = this.doc.createElementNS(SVG, "text");
-    text.textContent = line;
-    g.append(text);
-    const width = text.getComputedTextLength();
-    const spot = this.place(width + 30, RULE * 2, { onRule: true });
+    const texts = wrapWords(entry, LINE_CHARS, MAX_LINES).map((line) => {
+      const text = this.doc.createElementNS(SVG, "text");
+      text.textContent = line;
+      g.append(text);
+      return text;
+    });
+    const widths = texts.map((t) => t.getComputedTextLength());
+    const width = Math.max(...widths);
+    const spot = this.place(width + 30, RULE * (texts.length + 1), { onRule: true });
     if (!spot) {
       g.remove();
       return false;
     }
     this.placed.push(spot);
     const x = spot.x + 10;
-    const y = spot.y + BASE;
-    text.setAttribute("x", x);
-    text.setAttribute("y", y);
-    text.setAttribute("transform", `rotate(${j(0.8).toFixed(2)} ${x} ${y})`);
+    const top = spot.y + BASE;
+    const tilt = j(0.8).toFixed(2);
+    for (const [i, text] of texts.entries()) {
+      const y = top + i * RULE;
+      text.setAttribute("x", x);
+      text.setAttribute("y", y);
+      text.setAttribute("transform", `rotate(${tilt} ${x} ${top})`);
+      text.style.visibility = "hidden";
+    }
+    for (const [i, text] of texts.entries()) {
+      if (!live()) return true;
+      await this.write(g, text, x, top + i * RULE, widths[i], live);
+    }
+    if (!live()) return true;
+    const last = top + (texts.length - 1) * RULE;
+    const kinds = texts.length > 1 ? MARKS.filter((k) => k !== "strike" && k !== "circle") : MARKS;
+    const mark = this.mark(pick(kinds), x, top, width, last, widths.at(-1));
+    if (mark) {
+      g.append(mark);
+      await this.draw(mark, 600, live);
+    }
+    return true;
+  }
+
+  async write(g, text, x, y, width, live) {
     const clip = this.doc.createElementNS(SVG, "clipPath");
     clip.id = `doodle-${Math.random().toString(36).slice(2)}`;
     const reveal = this.doc.createElementNS(SVG, "rect");
     reveal.setAttribute("x", x - 4);
-    reveal.setAttribute("y", spot.y - 8);
+    reveal.setAttribute("y", y - BASE - 8);
     reveal.setAttribute("height", RULE + 16);
     reveal.setAttribute("width", 0);
     clip.append(reveal);
     g.append(clip);
     text.setAttribute("clip-path", `url(#${clip.id})`);
-    const ms = Math.min(3200, line.length * 55);
+    text.style.visibility = "";
+    const ms = Math.min(3200, text.textContent.length * 55);
     const t0 = performance.now();
     while (live()) {
       const p = Math.min(1, (performance.now() - t0) / ms);
@@ -209,22 +261,17 @@ export class Doodles {
       if (p >= 1) break;
       await frame();
     }
-    if (!live()) return true;
-    const mark = this.mark(pick(MARKS), x, y, width);
-    if (mark) {
-      g.append(mark);
-      await this.draw(mark, 600, live);
-    }
-    return true;
   }
 
-  mark(kind, x, y, w) {
+  // Marks a block of lines from the baseline y (the first) to last, w wide, whose last line is
+  // tail wide.
+  mark(kind, x, y, w, last = y, tail = w) {
     const d = {
-      underline: `M${pt(x - 2, y + 6)} Q${pt(x + w / 2, y + 10)} ${pt(x + w + 4, y + 5)}`,
-      box: `M${pt(x - 8, y - 24)} L${pt(x + w + 8, y - 25)} L${pt(x + w + 9, y + 8)} L${pt(x - 7, y + 9)} Z`,
+      underline: `M${pt(x - 2, last + 6)} Q${pt(x + tail / 2, last + 10)} ${pt(x + tail + 4, last + 5)}`,
+      box: `M${pt(x - 8, y - 24)} L${pt(x + w + 8, y - 25)} L${pt(x + w + 9, last + 8)} L${pt(x - 7, last + 9)} Z`,
       circle: ellipse(x + w / 2, y - 8, w / 2 + 16, 21),
       strike: `M${pt(x - 4, y - 8)} L${pt(x + w + 4, y - 10)}`,
-      arrow: `M${pt(x + w + 50, y - 30)} Q${pt(x + w + 30, y - 6)} ${pt(x + w + 8, y - 8)} M${pt(x + w + 18, y - 16)} L${pt(x + w + 7, y - 8)} L${pt(x + w + 18, y + 0)}`,
+      arrow: `M${pt(x + tail + 50, last - 30)} Q${pt(x + tail + 30, last - 6)} ${pt(x + tail + 8, last - 8)} M${pt(x + tail + 18, last - 16)} L${pt(x + tail + 7, last - 8)} L${pt(x + tail + 18, last)}`,
     }[kind];
     if (!d) return null;
     const path = this.doc.createElementNS(SVG, "path");
