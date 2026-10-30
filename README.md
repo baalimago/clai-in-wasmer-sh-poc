@@ -18,7 +18,8 @@ in your default browser. The first build takes a few minutes (the Go toolchain a
 later ones take seconds. `make check` runs the same page in headless Chromium and checks that
 `clai h` and `clai help` print clai's usage, that clai reads its terminal, that lines run
 in bash, that clai calls an MCP server that `uvx` starts, that its async commands run, and that
-slivingdoc serves with libgit2 behind it, and that ffmpeg records Chromium's fake microphone and
+slivingdoc serves with libgit2 behind it, that clai calls the filesystem MCP server that `npx`
+starts, and that ffmpeg records Chromium's fake microphone and
 clai's meeting-transcriber profile records and transcribes with it (with clai's test models).
 
 ## Prerequisites
@@ -44,6 +45,7 @@ browser tab
    ├─ /bin/clai: clai built with GOOS=wasix GOARCH=wasm
    ├─ /bin/npx, /bin/uvx: mcp/launcher.sh, which starts the MCP server ports below
    ├─ /bin/duckduckgo-mcp-server: mcp/duckduckgo-mcp-server, built like clai
+   ├─ /bin/mcp-server-filesystem: mcp/mcp-server-filesystem, built like clai
    ├─ /bin/slivingdoc: slivingdoc's release, built like clai with mcp/slivingdoc laid over it
    ├─ /bin/slivingdoc-git2: libgit2 compiled to WASI, which slivingdoc runs its git operations in
    ├─ /bin/ffmpeg, /bin/ffprobe: ffmpeg 5.1.6 for wasm32-wasi (audio/ffmpeg)
@@ -61,6 +63,8 @@ browser tab
 | `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-1nkwvt)) |
 | `components/clai` | clai itself, unchanged |
 | `components/slivingdoc`, `components/libgit2` | slivingdoc v1.3.1 and the libgit2 v1.9.6 it pins, unchanged |
+| `mcp/mcpserver` | The MCP stdio server (JSON-RPC, initialize, tools) the Go ports share |
+| `mcp/mcp-server-filesystem` | A Go port of [@modelcontextprotocol/server-filesystem](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) 2.1.0: its 14 tools, arguments and output, confined to the directories it is given |
 | `mcp/duckduckgo-mcp-server` | A Go port of [duckduckgo-mcp-server](https://github.com/nickclyde/duckduckgo-mcp-server) 0.7.0: its tools, arguments, output and `DDG_*` settings |
 | `mcp/slivingdoc` | What slivingdoc needs on wasix: its libgit2 helper and the Go files and `x/sys` that build it for the port (see [slivingdoc and libgit2](#slivingdoc-and-libgit2)) |
 | `mcp/launcher.sh` | `npx` and `uvx`: run the packages that have a port in `/bin`, and say so for the others |
@@ -124,12 +128,13 @@ neither runtime that could run them:
 
 So `npx` and `uvx` are `mcp/launcher.sh`, which accepts their usual forms (`npx -y pkg@1.2.3
 args`, `uvx pkg==1.2.3 args`, `--from`) and runs the package's port from `/bin`, ignoring the
-version. `cchub:clai/researcher` starts:
+version. `cchub:clai/researcher` and `cchub:baalimago/meeting-transcriber` start:
 
 | Server | Command | Here |
 | --- | --- | --- |
 | ddg | `uvx duckduckgo-mcp-server==0.7.0` | Runs the Go port: `search`, `fetch_content` and `expand_link` give the Python server's output, and a live search answers from the page |
 | slivingdoc | `npx -y slivingdoc@1.3.1 serve ...` | Runs slivingdoc 1.3.1 itself, with libgit2 1.9.6 in a helper process (below) |
+| Filesystem | `npx -y @modelcontextprotocol/server-filesystem ./` | Runs the Go port: the tools give the Node server's text, diffs included, and refuse paths, symlinks too, outside the directories given. It takes its directories only from its arguments, not from MCP Roots |
 
 The Go port has no threads, so a read that blocks in the kernel would stop every goroutine. The
 port polls a descriptor outside the netpoller (a terminal, a pipe) until it is readable, sleeping
@@ -164,11 +169,13 @@ model):
 
 ```sh
 export OPENAI_API_KEY=sk-...
-clai -prp cchub:baalimago/meeting-transcriber q "Record our standup and file the notes"
+mkdir -p ~/meetings && cd ~/meetings
+clai -profile-path cchub:baalimago/meeting-transcriber@11 -query-summary query "Daily sync"
 ```
 
-clai asks you to trust the profile first (or `clai profiles trust cchub:baalimago/meeting-transcriber`),
-starts slivingdoc for the notes, and Enter stops the recording. The recording and the files clai
+clai asks you to trust the profile first (or `clai profiles trust cchub:baalimago/meeting-transcriber@11`),
+starts slivingdoc and the filesystem server (on the directory you run it in) for the notes, and
+Enter stops the recording. The recording and the files clai
 writes are in the tab's memory only.
 
 ### slivingdoc and libgit2

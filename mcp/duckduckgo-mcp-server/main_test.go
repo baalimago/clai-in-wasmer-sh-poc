@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai-in-wasmer-sh-poc/mcp/mcpserver"
 )
 
 func testConfig() config {
@@ -20,10 +22,10 @@ func testConfig() config {
 }
 
 // exchange sends requests to a server, one per line, and returns its responses by id.
-func exchange(t *testing.T, s *server, requests ...string) map[string]json.RawMessage {
+func exchange(t *testing.T, s *mcpserver.Server, requests ...string) map[string]json.RawMessage {
 	t.Helper()
 	var out bytes.Buffer
-	if err := s.serve(context.Background(), strings.NewReader(strings.Join(requests, "\n")+"\n"), &out); err != nil {
+	if err := s.Serve(context.Background(), strings.NewReader(strings.Join(requests, "\n")+"\n"), &out); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 	got := map[string]json.RawMessage{}

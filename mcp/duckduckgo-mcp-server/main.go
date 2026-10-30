@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/baalimago/clai-in-wasmer-sh-poc/mcp/mcpserver"
 )
 
 const version = "0.7.0"
@@ -59,7 +61,7 @@ func run(args []string, getenv func(string) string, stdin io.Reader, stdout, std
 	s := newServer(cfg)
 	fmt.Fprintf(stderr, "DuckDuckGo MCP Server initialized:\n  SafeSearch: %s (kp=%s)\n  Default Region: %s\n",
 		cfg.safeSearch.name, cfg.safeSearch.kp, orNone(cfg.region))
-	return s.serve(context.Background(), stdin, stdout)
+	return s.Serve(context.Background(), stdin, stdout)
 }
 
 func orNone(s string) string {
@@ -132,7 +134,7 @@ func loadConfig(getenv func(string) string, stderr io.Writer) (config, error) {
 	}, nil
 }
 
-func newServer(cfg config) *server {
+func newServer(cfg config) *mcpserver.Server {
 	client := &http.Client{
 		Timeout:       30 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -159,11 +161,18 @@ func newServer(cfg config) *server {
 	if cfg.fetchHostRPM > 0 {
 		f.hosts = &hostLimiters{perMinute: cfg.fetchHostRPM, hosts: map[string]*limiter{}}
 	}
-	return &server{name: "ddg-search", version: version, tools: tools(s, f, registry)}
+	return &mcpserver.Server{
+		Name:    "ddg-search",
+		Version: version,
+		Tools:   tools(s, f, registry),
+		ErrorText: func(tool string, err error) string {
+			return fmt.Sprintf("Error executing tool %s: %v", tool, err)
+		},
+	}
 }
 
-func tools(s *searcher, f *fetcher, registry *links) []tool {
-	return []tool{
+func tools(s *searcher, f *fetcher, registry *links) []mcpserver.Tool {
+	return []mcpserver.Tool{
 		{
 			Name: "search",
 			Description: "Search the web using DuckDuckGo. Returns a list of results with titles, URLs, and snippets. Use this to find current information, research topics, or locate specific websites. For best results, use specific and descriptive search queries.\n\n" +
@@ -176,13 +185,13 @@ func tools(s *searcher, f *fetcher, registry *links) []tool {
 				"max_results": map[string]any{"title": "Max Results", "type": "integer", "default": 10},
 				"region":      map[string]any{"title": "Region", "type": "string", "default": ""},
 			}),
-			call: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			Call: mcpserver.TextFunc(func(ctx context.Context, raw json.RawMessage) (string, error) {
 				var args struct {
 					Query      *string `json:"query"`
 					MaxResults *int    `json:"max_results"`
 					Region     string  `json:"region"`
 				}
-				if err := decodeArguments(raw, &args); err != nil {
+				if err := mcpserver.DecodeArguments(raw, &args); err != nil {
 					return "", err
 				}
 				if args.Query == nil {
@@ -197,7 +206,7 @@ func tools(s *searcher, f *fetcher, registry *links) []tool {
 					return fmt.Sprintf("An error occurred while searching: %v", err), nil
 				}
 				return s.format(results), nil
-			},
+			}),
 		},
 		{
 			Name: "fetch_content",
@@ -216,16 +225,16 @@ func tools(s *searcher, f *fetcher, registry *links) []tool {
 				"backend":     map[string]any{"title": "Backend", "type": "string"},
 				"parse_mode":  map[string]any{"title": "Parse Mode", "type": "string"},
 			}),
-			call: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			Call: mcpserver.TextFunc(func(ctx context.Context, raw json.RawMessage) (string, error) {
 				var args fetchArgs
-				if err := decodeArguments(raw, &args); err != nil {
+				if err := mcpserver.DecodeArguments(raw, &args); err != nil {
 					return "", err
 				}
 				if args.URL == "" {
 					return "", errors.New("missing required argument: url")
 				}
 				return f.fetch(ctx, args), nil
-			},
+			}),
 		},
 		{
 			Name: "expand_link",
@@ -234,11 +243,11 @@ func tools(s *searcher, f *fetcher, registry *links) []tool {
 			InputSchema: objectSchema([]string{"token"}, map[string]any{
 				"token": map[string]any{"title": "Token", "type": "string"},
 			}),
-			call: func(_ context.Context, raw json.RawMessage) (string, error) {
+			Call: mcpserver.TextFunc(func(_ context.Context, raw json.RawMessage) (string, error) {
 				var args struct {
 					Token *string `json:"token"`
 				}
-				if err := decodeArguments(raw, &args); err != nil {
+				if err := mcpserver.DecodeArguments(raw, &args); err != nil {
 					return "", err
 				}
 				if args.Token == nil {
@@ -248,7 +257,7 @@ func tools(s *searcher, f *fetcher, registry *links) []tool {
 					return u, nil
 				}
 				return unknownRefError(*args.Token), nil
-			},
+			}),
 		},
 	}
 }

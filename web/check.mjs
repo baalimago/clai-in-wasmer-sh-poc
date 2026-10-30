@@ -33,6 +33,11 @@ const PROFILE = JSON.stringify({
   tools: ["mcp_ddg*", "cmd", "async_cmd*"],
   mcp_servers: { ddg: { command: "uvx", args: ["duckduckgo-mcp-server==0.7.0"], startup: "lazy" } },
 });
+const FS_PROFILE = JSON.stringify({
+  use_tools: true,
+  tools: ["mcp_Filesystem*"],
+  mcp_servers: { Filesystem: { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "./"] } },
+});
 // An async command that writes its own id where the test model reads it, while `cmd` sleeps
 // to let it run.
 const ASYNC = [
@@ -62,6 +67,13 @@ const MCP = [
       `npx -y slivingdoc@1.3.1 serve 2>/dev/null | grep -o '"serverInfo":{"name":"slivingdoc"'`,
     status: 0,
     prints: '"serverInfo":{"name":"slivingdoc"',
+  },
+  // The filesystem server meeting-transcriber starts, confined to the directory it is given.
+  { line: `printf '%s' '${FS_PROFILE}' > /tmp/fs.json`, status: 0, prints: "" },
+  {
+    line: "mkdir -p /tmp/notes && cd /tmp/notes && clai -profile-path /tmp/fs.json -cm test query tool_mcp_Filesystem_list_allowed_directories 2>&1 | cat",
+    status: 0,
+    prints: "Allowed directories:",
   },
   { line: `printf '%s' '${PROFILE}' > /tmp/mcp.json`, status: 0, prints: "" },
   {

@@ -9,7 +9,7 @@ tool=${0##*/}
 
 # The packages each runs, as `package:program`.
 case $tool in
-npx) known="slivingdoc:slivingdoc" ;;
+npx) known="slivingdoc:slivingdoc @modelcontextprotocol/server-filesystem:mcp-server-filesystem" ;;
 uvx) known="duckduckgo-mcp-server:duckduckgo-mcp-server" ;;
 *)
   echo "launcher: run as npx or uvx, not $tool" >&2

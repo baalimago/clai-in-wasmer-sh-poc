@@ -36,7 +36,7 @@ $(WWW)/clai.wasm: $(GO) FORCE | submodules
 
 # The MCP servers, which the machine's npx and uvx (mcp/launcher.sh) start, in /bin with them,
 # and the programs they start. index.json lists them for the page's worker.
-PROGRAMS := duckduckgo-mcp-server slivingdoc slivingdoc-git2
+PROGRAMS := duckduckgo-mcp-server mcp-server-filesystem slivingdoc slivingdoc-git2
 LAUNCHERS := npx uvx
 
 $(WWW)/bin/%.wasm: $(GO) FORCE
