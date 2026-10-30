@@ -4,11 +4,30 @@
 <title>Minutes on WASIX v2</title>
 <link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./looks.css">
+<script>
+  // The app's look, one of four to compare: ?look=a..d, else the last one picked.
+  (() => {
+    const looks = ["a", "b", "c", "d"];
+    let look = new URLSearchParams(location.search).get("look");
+    try {
+      look = looks.includes(look) ? look : localStorage.getItem("minutes.look");
+    } catch {}
+    document.documentElement.dataset.look = looks.includes(look) ? look : "a";
+  })();
+</script>
 <header class="top">
   <div class="brand">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
     <strong>Minutes</strong>
     <span class="tagline">meeting notes, recorded and written in your browser</span>
+  </div>
+  <div class="looks" role="group" aria-label="Look">
+    <span>Look</span>
+    <button data-look="a" title="Aurora">A</button>
+    <button data-look="b" title="Editorial">B</button>
+    <button data-look="c" title="Bento">C</button>
+    <button data-look="d" title="Studio">D</button>
   </div>
   <div class="chips">
     <span class="chip" id="machine-chip">wasmer.sh · WASIX v2 kernel: booting</span>

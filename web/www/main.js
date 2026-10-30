@@ -28,6 +28,24 @@ const peek = (open) => {
 peekButton.onclick = () => peek(!hood.classList.contains("open"));
 document.querySelector("#peek-close").onclick = () => peek(false);
 
+for (const button of document.querySelectorAll("[data-look]")) {
+  const mark = () => {
+    for (const b of document.querySelectorAll("[data-look]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.look === document.documentElement.dataset.look));
+    }
+  };
+  button.onclick = () => {
+    document.documentElement.dataset.look = button.dataset.look;
+    try {
+      localStorage.setItem("minutes.look", button.dataset.look);
+    } catch {
+      // The look lasts this load.
+    }
+    mark();
+  };
+  mark();
+}
+
 const tabs = document.querySelectorAll("[role=tab]");
 const showTab = (name) => {
   peek(true);
