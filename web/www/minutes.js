@@ -197,6 +197,7 @@ export class Minutes {
     this.login = null;
     this.trusted = null;
     this.spaces = null;
+    this.connecting = true;
     this.config = { ...DEFAULTS, ...config };
     this.meetings = [];
     this.waiters = new Map();
@@ -230,6 +231,10 @@ export class Minutes {
     secret("#notebook-form", "#token-input", "SLIVINGDOC_TOKEN");
     $("#new").onclick = () => this.show("record");
     $("#signin").onclick = () => this.signin(window.open("about:blank", "_blank"));
+    $("#not-now").onclick = () => {
+      this.connecting = false;
+      this.render();
+    };
     $("#connect").onclick = () => {
       this.connecting = !this.connecting;
       this.render();
@@ -721,6 +726,7 @@ export class Minutes {
     const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     const state = $("#rec-state");
     state.classList.toggle("live", live);
+    $("#recbar").classList.toggle("waiting", !live && !r.stages.has("recorded"));
     state.textContent = live ? `Recording ${clock}` : r.stages.has("recorded") ? `Recorded ${clock}` : r.answering ? "The agent is working…" : "Starting the agent…";
     const inputs = this.audio?.inputs() ?? [];
     const tab = inputs.find((i) => i.name === "tab");

@@ -18,6 +18,7 @@ const TYPES = {
   ".css": "text/css",
   ".wasm": "application/wasm",
   ".woff2": "font/woff2",
+  ".svg": "image/svg+xml",
 };
 
 function resolve(pathname) {

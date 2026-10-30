@@ -124,3 +124,23 @@ body, .top { background: var(--pad-paper); }
 .pencil[hidden] { display: none; }
 .pencil > svg { position: absolute; left: -1px; top: -10px; transform-origin: 1px 50%; transform: rotate(28deg); filter: drop-shadow(10px 14px 5px rgba(40, 30, 10, .28)); transition: transform .18s ease-out; }
 .pencil.lifted > svg { transform: translate(6px, -8px) rotate(24deg) scale(1.03); filter: drop-shadow(18px 24px 8px rgba(40, 30, 10, .2)); }
+
+/* Until the agent records, the pencil doodles loops on the rule beside the status. */
+.recbar.waiting .wave { position: relative; overflow: visible; }
+.recbar.waiting .wave::before { content: ""; position: absolute; left: 0; top: -28px; width: 380px; height: 150px; pointer-events: none; background: url("./doodle.svg") no-repeat; }
+
+/* Signing in to slivingdoc is the first step: a sticky note taped on the pad until it is done
+   or put off. */
+#notebook-card {
+  position: relative; z-index: 1; flex: 0 1 460px; align-self: flex-start; box-sizing: border-box; min-height: calc(var(--rule) * 11); padding: 24px 28px 28px; transform: rotate(-1.2deg);
+  background: linear-gradient(170deg, #ffd6a8, #ffc98f 60%, #f8bb7c); box-shadow: 0 1px 1px rgba(0, 0, 0, .1), 0 14px 26px -8px rgba(90, 50, 10, .35);
+}
+#notebook-card::before { content: ""; position: absolute; top: -12px; left: 50%; width: 110px; height: 26px; margin-left: -55px; background: rgba(255, 255, 255, .55); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); transform: rotate(2deg); }
+#notebook-card > h2 { margin-bottom: 8px; font-size: 32px; }
+#notebook-card .quiet { color: #5a4630; }
+#notebook-card .row { margin-top: 16px; flex-wrap: wrap; gap: 12px 18px; }
+#notebook-card #signin { height: 44px; padding: 0 22px; font-size: 24px; background: var(--pad-accent); color: #fff; box-shadow: 0 4px 0 #8e2a1f; }
+#notebook-card #signin:active { transform: translateY(2px); box-shadow: 0 2px 0 #8e2a1f; }
+#notebook-card .inline { height: auto; padding: 0; font: 20px var(--hand); color: #5a4630; }
+#notebook-card input { background: rgba(255, 255, 255, .55); }
+.notebook #connect { margin-top: 8px; padding: 6px 12px; border: 1.5px dashed var(--pad-accent); border-radius: 3px; font: 700 19px var(--hand); color: var(--pad-accent); text-decoration: none; }
