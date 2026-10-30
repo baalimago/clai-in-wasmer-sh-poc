@@ -144,3 +144,15 @@ body, .top { background: var(--pad-paper); }
 #notebook-card .inline { height: auto; padding: 0; font: 20px var(--hand); color: #5a4630; }
 #notebook-card input { background: rgba(255, 255, 255, .55); }
 .notebook #connect { margin-top: 8px; padding: 6px 12px; border: 1.5px dashed var(--pad-accent); border-radius: 3px; font: 700 19px var(--hand); color: var(--pad-accent); text-decoration: none; }
+
+/* After the recording, the pencil doodles on the empty pad: doodles.js. */
+.doodles { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; overflow: visible; }
+.doodles path { fill: none; stroke: #5b5d63; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
+.doodles path.pen { stroke: rgba(192, 57, 43, .75); stroke-width: 2; }
+.doodles text { font: 22px var(--hand); fill: #4f5157; }
+.doodles g, .doodles { transition: opacity .6s ease-out; }
+.doodles .gone, .doodles.gone { opacity: 0; }
+.doodle-pencil > g { filter: drop-shadow(7px 10px 3.5px rgba(40, 30, 10, .28)); }
+
+/* The notebook's history is what the agent's tools print; the saved path says enough. */
+#history, #history-list, #saved .history-sep { display: none; }

@@ -7,6 +7,7 @@ import { LineEditor, split } from "./shell.js";
 import { AudioInputs } from "./audio.js";
 import { HoodView, Machine } from "./hood.js";
 import { Minutes } from "./minutes.js";
+import { Doodles } from "./doodles.js";
 import { Recordings } from "./recordings.js";
 
 // No convertEol: clai's output comes through the machine's terminal, which turns "\n" into
@@ -242,6 +243,7 @@ minutes = new Minutes({
   config: window.minutesConfig ?? {},
 });
 minutes.start();
+new Doodles(document, model).start();
 window.minutes = minutes;
 
 // The microphone is asked for up front, so that the browser names its audio inputs; ffmpeg in

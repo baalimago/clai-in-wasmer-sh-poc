@@ -734,6 +734,7 @@ export class Minutes {
     const state = $("#rec-state");
     state.classList.toggle("live", live);
     $("#recbar").classList.toggle("waiting", !live && !r.stages.has("recorded"));
+    $("#recbar").classList.toggle("summarizing", r.stages.has("recorded"));
     state.textContent = live ? `Recording ${clock}` : r.stages.has("recorded") ? `Recorded ${clock}` : r.answering ? "The agent is working…" : "Starting the agent…";
     const inputs = this.audio?.inputs() ?? [];
     const tab = inputs.find((i) => i.name === "tab");
