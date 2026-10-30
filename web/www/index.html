@@ -4,40 +4,12 @@
 <title>Minutes on WASIX v2</title>
 <link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="./style.css">
-<link rel="stylesheet" href="./looks.css">
-<link rel="stylesheet" href="./notebook.css">
-<link rel="stylesheet" href="./legalpad.css">
-<script>
-  // The app's look, to compare: ?look=a..d, b1..b4 or b4a..b4d, else the last one picked.
-  (() => {
-    const looks = ["a", "b", "c", "d", "b1", "b2", "b3", "b4", "b4a", "b4b", "b4c", "b4d"];
-    let look = new URLSearchParams(location.search).get("look");
-    try {
-      look = looks.includes(look) ? look : localStorage.getItem("minutes.look");
-    } catch {}
-    document.documentElement.dataset.look = looks.includes(look) ? look : "a";
-  })();
-</script>
+<link rel="stylesheet" href="./pad.css">
 <header class="top">
   <div class="brand">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
     <strong>Minutes</strong>
     <span class="tagline">meeting notes, recorded and written in your browser</span>
-  </div>
-  <div class="looks" role="group" aria-label="Look">
-    <span>Look</span>
-    <button data-look="a" title="Aurora">A</button>
-    <button data-look="b" title="Editorial">B</button>
-    <button data-look="c" title="Bento">C</button>
-    <button data-look="d" title="Studio">D</button>
-    <button data-look="b1" title="Fountain pen">B1</button>
-    <button data-look="b2" title="Bullet journal">B2</button>
-    <button data-look="b3" title="Index cards">B3</button>
-    <button data-look="b4" title="Legal pad">B4</button>
-    <button data-look="b4a" title="Legal pad: on the line">4a</button>
-    <button data-look="b4b" title="Legal pad: pencil on the desk">4b</button>
-    <button data-look="b4c" title="Legal pad: fountain pen">4c</button>
-    <button data-look="b4d" title="Legal pad: writing IRL">4d</button>
   </div>
   <div class="chips">
     <span class="chip" id="machine-chip">wasmer.sh · WASIX v2 kernel: booting</span>
@@ -212,4 +184,4 @@
 </main>
 <div class="players"></div>
 <script type="module" src="./main.js"></script>
-<script type="module" src="./legalpad.js"></script>
+<script type="module" src="./handwriting.js"></script>
