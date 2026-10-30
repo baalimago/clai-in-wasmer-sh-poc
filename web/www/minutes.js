@@ -23,6 +23,8 @@ export const DEFAULTS = {
   flags: "",
   env: "",
   notebook: "~/notebook",
+  // The slivingdoc space meetings go to, when the login has it.
+  space: "notes",
   // The agent's query: the format, then the meeting.
   query: (title, details) =>
     `${NOTEBOOK_FORMAT}\n\nMeeting: ${title}.${details ? ` ${details}` : ""}`,
@@ -138,10 +140,11 @@ export function accountOf(credentials) {
   return found;
 }
 
-// The spaces `slivingdoc space` lists for the stored login, and whether one is the default.
+// The spaces `slivingdoc space` lists for the stored login, and its default space, if any
+// (marked with a *).
 export function parseSpaces(text) {
-  const names = [...text.matchAll(/^ {2}(\S+) {2,}(?:write|read)\b/gm)].map((m) => m[1]);
-  return { names, chosen: !/No default space/.test(text) };
+  const rows = [...text.matchAll(/^([ *])!? (\S+)(?: \([^)]*\))? {2,}(?:write|read)\b/gm)];
+  return { names: rows.map((m) => m[2]), current: rows.find((m) => m[1] === "*")?.[2] ?? null };
 }
 
 // A profile clai fetches from the hub or a repository, rather than a file on the machine.
@@ -320,9 +323,10 @@ export class Minutes {
       this.spaces = null;
       return this.status(`slivingdoc could not list the login's spaces (exit ${status}).`);
     }
-    const { names, chosen } = parseSpaces(body);
-    if (!chosen && names.length === 1) return this.chooseSpace(names[0], true);
-    this.spaces = chosen ? null : names;
+    const { names, current } = parseSpaces(body);
+    const space = names.includes(this.config.space) ? this.config.space : !current && names.length === 1 ? names[0] : null;
+    if (space && space !== current) return this.chooseSpace(space, true);
+    this.spaces = current ? null : names;
     this.render();
   }
 

@@ -158,11 +158,12 @@ test("slivingdoc's login gives its sign-in page and code, then who approved it",
   assert.equal(accountOf("not json"), null);
 });
 
-test("a login's spaces, and whether one is its default", () => {
+test("a login's spaces, and its default one", () => {
   const none = "HOSTED  https://api.slivingdoc.dev  ada@example.com\n  main  write  ada@example.com\n" +
-    "  notes  read  ada@example.com\nNo default space; run 'slivingdoc space <name>' to choose one.\n";
-  assert.deepEqual(parseSpaces(none), { names: ["main", "notes"], chosen: false });
-  assert.equal(parseSpaces("HOSTED  https://api.slivingdoc.dev  ada\n* main  write  ada\n").chosen, true);
+    "  notes (meetings)  read  ada@example.com\nNo default space; run 'slivingdoc space <name>' to choose one.\n";
+  assert.deepEqual(parseSpaces(none), { names: ["main", "notes"], current: null });
+  assert.deepEqual(parseSpaces("HOSTED  https://api.slivingdoc.dev  ada\n  main  write  ada\n* notes  write  ada\n"),
+    { names: ["main", "notes"], current: "notes" });
 });
 
 test("a hub profile is trusted before it runs, and its page says what it runs", () => {
