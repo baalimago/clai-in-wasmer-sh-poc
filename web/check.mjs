@@ -122,6 +122,12 @@ const AUDIO = [
   { line: writeAudioConfig(60), status: 0, prints: "" },
 ];
 
+// A meeting in the notebook, as the agent files one.
+const NOTEBOOK = "mkdir -p ~/notebook/meetings/summaries ~/notebook/meetings/transcripts && cd ~/notebook/meetings && " +
+  `printf '%s' ${quote("---\ntitle: Design review\ndate: 2026-10-28T09:00:00Z\nduration: 38\n---\n## Decisions\n\n- Ship the peek\n")} ` +
+  "> summaries/2026-10-28T09-00Z_design-review.md && " +
+  `printf '%s' ${quote("**Speaker A** [00:12]: Ship it.\n")} > transcripts/2026-10-28T09-00Z_design-review.md`;
+
 // `clai setup` asks for a category on /dev/tty. `keys` are typed once it does.
 const INTERACTIVE = [
   // The terminal's line editing: the x is erased before clai reads the line, so it quits.
@@ -215,9 +221,12 @@ try {
     }
   }
   // Minutes' Record: the agent starts ffmpeg through its audio_record tool, the page shows Stop,
-  // which ends the recording as Enter does, and the agent's reply comes back to the app.
+  // which ends the recording as Enter does, and the agent's reply comes back to the app. Then
+  // a meeting of the notebook opens as its summary and transcript, rendered.
   if (bash) {
-    await page.evaluate(() => window.minutes.env.set("OPENAI_API_KEY", "sk-test-not-a-key"));
+    await page.evaluate((line) => window.runCommand(line), NOTEBOOK);
+    await page.fill("#key-input", "sk-test-not-a-key");
+    await page.click("#key-form button");
     await page.fill("#title", "Daily sync");
     await page.click("#record-form button");
     const stop = await page
@@ -228,7 +237,7 @@ try {
       await page.click("#stop");
     }
     const replied = await page
-      .waitForSelector("#agent-reply:not([hidden])", { timeout: 60_000 })
+      .waitForSelector("#agent:not([hidden])", { timeout: 60_000 })
       .then(() => true, () => false);
     const result = await page.evaluate(() => {
       const r = window.minutes.recording;
@@ -243,7 +252,6 @@ try {
         reply: r.reply,
         stages: [...r.stages],
         ffmpegUnder: ancestors.find((name) => name !== "ffmpeg" && name !== "bash"),
-        timer: document.querySelector("#rec-timer").textContent,
         command: window.hoodModel.tree(action).map((n) => n.proc.argv[2]).join(" "),
       };
     });
@@ -251,6 +259,20 @@ try {
     if (!stop || !replied || result.status !== 0 || !result.stages.includes("recorded") ||
       result.ffmpegUnder !== "clai" || !result.command.includes("clai -reply-only -profile-path /tmp/meeting.json")) {
       console.error("\nFAIL: Minutes' Record did not show Stop, run ffmpeg under clai, or bring the agent's reply back");
+      process.exitCode = 1;
+    }
+    await page.click(".meeting >> text=Design review");
+    const opened = await page
+      .waitForFunction(() => document.querySelector("#transcript").textContent.includes("Speaker A"), null, { timeout: 30_000 })
+      .then(() => true, () => false);
+    const meeting = await page.evaluate(() => ({
+      title: document.querySelector("#meeting-title").textContent,
+      summary: document.querySelector("#summary").innerHTML,
+      path: document.querySelector("#saved-path").textContent,
+    }));
+    console.log(`Minutes, a meeting: ${JSON.stringify(meeting)}`);
+    if (!opened || meeting.title !== "Design review" || !meeting.summary.includes("<li>Ship the peek</li>")) {
+      console.error("\nFAIL: the notebook's meeting did not open as its rendered summary and transcript");
       process.exitCode = 1;
     }
   }

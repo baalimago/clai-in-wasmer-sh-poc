@@ -1,6 +1,6 @@
-// The page: Minutes on the left, the machine under it on the right. The machine runs in a Web
-// Worker (worker.js); its console is the terminal in the right half's Terminal tab, where every
-// line runs, typed or sent by a button of the app.
+// The page: Minutes, and below it, when opened, a peek under the hood of the machine it runs
+// on. The machine runs in a Web Worker (worker.js); its console is the peek's terminal, which
+// shows what the app's programs print and takes lines of its own.
 import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
 import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
 import { LineEditor, split } from "./shell.js";
@@ -17,8 +17,20 @@ term.open(document.querySelector("#terminal"));
 fit.fit();
 addEventListener("resize", () => fit.fit());
 
+const hood = document.querySelector("#hood");
+const peekButton = document.querySelector("#peek");
+const peek = (open) => {
+  hood.classList.toggle("open", open);
+  peekButton.setAttribute("aria-expanded", String(open));
+  peekButton.lastChild.textContent = open ? " Hide the machine" : " Peek under the hood";
+  if (open) fit.fit();
+};
+peekButton.onclick = () => peek(!hood.classList.contains("open"));
+document.querySelector("#peek-close").onclick = () => peek(false);
+
 const tabs = document.querySelectorAll("[role=tab]");
 const showTab = (name) => {
+  peek(true);
   for (const tab of tabs) tab.setAttribute("aria-selected", String(tab.dataset.tab === name));
   for (const panel of document.querySelectorAll("[data-panel]")) {
     panel.classList.toggle("active", panel.dataset.panel === name);
@@ -32,7 +44,7 @@ for (const tab of tabs) tab.onclick = () => showTab(tab.dataset.tab);
 window.showTab = showTab;
 
 const model = new Machine();
-const hood = new HoodView(model, document.querySelector("#hood"));
+const view = new HoodView(model, hood);
 window.hoodModel = model;
 
 term.writeln("Booting a WASIX v2 machine…");
@@ -41,18 +53,23 @@ const size = () => ({ rows: term.rows, cols: term.cols });
 worker.postMessage({ size: size() });
 let finished = null;
 let minutes = null;
-const level = document.querySelector("#level");
+// The loudest of each input's latest samples, for the waveform.
+const peaks = new Map();
 const audio = new AudioInputs(
   (name, bytes) => {
-    if (name === "mic") {
-      const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 1);
-      let peak = 0;
-      for (const s of samples) peak = Math.max(peak, Math.abs(s));
-      level.style.width = `${Math.min(100, (peak / 32768) * 160)}%`;
-    }
+    const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 1);
+    let peak = 0;
+    for (const s of samples) peak = Math.max(peak, Math.abs(s));
+    peaks.set(name, peak / 32768);
+    if (name === "mic") minutes?.level(Math.min(1, Math.max(...peaks.values()) * 1.6));
     worker.postMessage({ samples: { name, bytes } }, [bytes.buffer]);
   },
-  (text) => term.write(`\r\n\x1b[33m${text}\x1b[0m\r\n`),
+  (text) => {
+    term.write(`\r\n\x1b[33m${text}\x1b[0m\r\n`);
+    minutes?.status(text);
+  },
+  (share) => minutes?.offerShare(share),
+  () => minutes?.render(),
 );
 // What `play` (audio/play.sh) wrote to /run/audio/play, in a player until it is closed.
 const play = (bytes) => {
@@ -90,7 +107,7 @@ const { bash, home } = await new Promise((ready) => {
 term.writeln(bash
   ? "Ready. Try \x1b[1mls /bin\x1b[0m, \x1b[1mclai h\x1b[0m, or \x1b[1mhelp\x1b[0m.\r\n"
   : "Ready, without bash: run \x1b[1mmake packages\x1b[0m for it. Try \x1b[1mclai h\x1b[0m.\r\n");
-document.querySelector("#machine-chip").textContent = "wasmer · WASIX v2: running";
+document.querySelector("#machine-chip").textContent = "wasmer.sh · WASIX v2 kernel: running";
 term.onResize(() => worker.postMessage({ size: size() }));
 
 // Runs `args` from `path`, resolving to its exit status and streaming what it prints.
@@ -134,7 +151,6 @@ const builtins = {
       if (at > 0) env.set(assignment.slice(0, at), assignment.slice(at + 1));
       else term.writeln(`export: want KEY=VALUE, got ${assignment}`);
     }
-    minutes?.render();
     return 0;
   },
   cd: async (target = "~") => {
@@ -169,7 +185,9 @@ window.terminalText = () => {
   return text;
 };
 
-// Lines from the app and from scripts run one at a time, after what the terminal runs.
+// What the app runs and lines from scripts take turns with what is typed: one runs at a time,
+// as the console has one foreground program. The app's do not go through the line editor; the
+// terminal notes them, as the console shows what they print.
 let queue = Promise.resolve();
 const serially = (task) => {
   const next = queue.then(async () => {
@@ -180,23 +198,29 @@ const serially = (task) => {
   return next;
 };
 window.runCommand = (line) => serially(() => editor.submit(line));
-// The app's lines show in the terminal as if typed, with the button that sent them.
 const machine = {
-  run: (line, action, label) => serially(() => {
-    term.write(`\x1b[2m# ${label}, from Minutes\x1b[0m\r\n${line.replaceAll("\n", "\r\n")}\r\n`);
-    return editor.submit(line, action);
+  run: (line, action) => serially(async () => {
+    editor.busy = true;
+    term.write(`\r\x1b[2K\x1b[2m# Minutes ran: ${line.replaceAll("\n", "; ")}\x1b[0m\r\n`);
+    try {
+      return await run(line, action);
+    } finally {
+      editor.busy = false;
+      term.write(editor.prompt + editor.line);
+    }
   }),
   type,
 };
 minutes = new Minutes({
   root: document.querySelector("#app"),
   machine,
-  hood,
+  hood: view,
   model,
   env,
-  showTab,
+  audio,
   config: window.minutesConfig ?? {},
 });
+minutes.refresh(true);
 window.minutes = minutes;
 
 if (bash) document.body.dataset.bash = "true";

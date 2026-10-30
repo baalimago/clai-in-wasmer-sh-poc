@@ -9,18 +9,21 @@ import { server as wisp, logging } from "@mercuryworkshop/wisp-js/server";
 
 const WEB = path.dirname(fileURLToPath(import.meta.url));
 const WWW = path.join(WEB, "www");
-const XTERM = path.join(WEB, "node_modules", "@xterm");
+// The packages the page loads from node_modules: the terminal, the fonts and marked.
+const PACKAGES = ["@xterm", "@fontsource", "marked"];
 const TYPES = {
   ".html": "text/html",
   ".js": "text/javascript",
   ".mjs": "text/javascript",
   ".css": "text/css",
   ".wasm": "application/wasm",
+  ".woff2": "font/woff2",
 };
 
 function resolve(pathname) {
-  const [root, rest] = pathname.startsWith("/node_modules/@xterm/")
-    ? [XTERM, pathname.slice("/node_modules/@xterm/".length)]
+  const scope = PACKAGES.find((p) => pathname.startsWith(`/node_modules/${p}/`));
+  const [root, rest] = scope
+    ? [path.join(WEB, "node_modules", scope), pathname.slice(`/node_modules/${scope}/`.length)]
     : [WWW, pathname === "/" ? "index.html" : pathname];
   const file = path.join(root, rest);
   return file.startsWith(root + path.sep) ? file : null;

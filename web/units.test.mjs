@@ -3,8 +3,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Machine, describe, mask } from "./www/hood.js";
-import { describeFile, parseNote, replyText } from "./www/minutes.js";
+import { Machine, describe, label, mask } from "./www/hood.js";
+import { notePath, renderMarkdown } from "./www/markdown.js";
+import {
+  describeFile, groupMeetings, meetingMeta, parseList, parseNote, replyText, summariesIn,
+} from "./www/minutes.js";
 
 const exec = (pid, ppid, path, argv, t = 1) => ({ t, type: "exec", pid, ppid, path, argv });
 
@@ -89,4 +92,57 @@ test("the agent's reply leaves out clai's status lines", () => {
   const stdout = "2026-10-30T12:45:14Z \x1b[32mok\x1b[0m: added new field(s)\n" +
     "2026-10-30T12:45:14Z \x1b[33mwarning\x1b[0m: found none\nWho is Speaker A?\n";
   assert.equal(replyText(stdout), "Who is Speaker A?");
+});
+
+test("the process tree folds a wrapper into its program and draws its lines", () => {
+  const m = new Machine();
+  m.add([
+    exec(2, 1, "/bin/bash", ["bash", "-c", "clai q", "minutes:Record#1"]),
+    exec(3, 2, "/bin/clai", ["clai", "q"]),
+    exec(4, 3, "/usr/local/bin/ffmpeg", ["ffmpeg", "-sources", "pulse"]),
+    exec(5, 3, "/usr/local/bin/ffmpeg", ["ffmpeg", "-f", "pulse", "-i", "browser-mic"]),
+    exec(6, 5, "/bin/ffmpeg", ["ffmpeg", "-f", "s16le", "-i", "/run/audio/mic"]),
+  ]);
+
+  assert.deepEqual(m.rows("minutes:Record#1").map((r) => `${r.prefix}${r.proc.pid}`), ["2", "└ 3", "  ├ 4", "  └ 5"]);
+  assert.deepEqual(label(m.procs.get(5)), { note: "WASI", tag: "recording" });
+  assert.equal(label(m.procs.get(4)).note, "lists audio devices");
+  assert.equal(label(m.procs.get(3)).note, "the agent · Go, GOOS=wasix");
+});
+
+test("the notebook's listing gives each meeting its title, date and duration", () => {
+  const body = "@@ meetings/summaries/2026-10-29T09-00Z_design-review.md\ntitle: Design review\nduration: 38\n---\n" +
+    "@@ meetings/summaries/2026-10-30T08-00Z_daily-sync.md\n";
+  const [first, second] = parseList(body);
+
+  assert.equal(first.title, "Daily sync");
+  assert.equal(first.date.toISOString(), "2026-10-30T08:00:00.000Z");
+  assert.equal(first.duration, null);
+  assert.equal(second.title, "Design review");
+  assert.equal(second.duration, 38);
+});
+
+test("meetings group by day and say when and how long", () => {
+  const now = new Date(2026, 9, 30, 15, 0);
+  const at = (day, hour) => ({ date: new Date(2026, 9, day, hour, 0), duration: 38 });
+  const groups = groupMeetings([at(30, 9), at(28, 10), at(1, 10)], now);
+
+  assert.deepEqual(groups.map((g) => [g.label, g.items.length]), [["Today", 1], ["This week", 1], ["Earlier", 1]]);
+  assert.match(meetingMeta(at(28, 10), now), /^\S+ · 38 min$/);
+  assert.equal(meetingMeta({ date: null, duration: 0.2 }, now), "<1 min");
+});
+
+test("the agent's links to the notebook open in the app, and its HTML stays text", () => {
+  const reply = "- [Transcript](file:///home/user/notebook/meetings/transcripts/2026-10-30T13-48Z_daily-sync.md)\n" +
+    "- [Summary](file:///home/user/notebook/meetings/summaries/2026-10-30T13-48Z_daily-sync.md)\n\n" +
+    "**Summary:** <img src=x onerror=alert(1)> [x](javascript:alert(1)) [docs](https://example.com)";
+  const html = renderMarkdown(reply);
+
+  assert.deepEqual(summariesIn(reply), ["meetings/summaries/2026-10-30T13-48Z_daily-sync.md"]);
+  assert.equal(notePath("meetings/summaries/a.md"), "meetings/summaries/a.md");
+  assert.equal(notePath("https://example.com"), null);
+  assert.match(html, /<a href="#" data-note="meetings\/transcripts\/2026-10-30T13-48Z_daily-sync.md">Transcript<\/a>/);
+  assert.match(html, /<strong>Summary:<\/strong> &lt;img/);
+  assert.doesNotMatch(html, /javascript:|<img/);
+  assert.match(html, /<a href="https:\/\/example.com" target="_blank" rel="noopener">docs<\/a>/);
 });

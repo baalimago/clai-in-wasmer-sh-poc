@@ -11,70 +11,113 @@
     <span class="tagline">meeting notes, recorded and written in your browser</span>
   </div>
   <div class="chips">
-    <span class="chip" id="machine-chip">wasmer · WASIX v2: booting</span>
+    <span class="chip" id="machine-chip">wasmer.sh · WASIX v2 kernel: booting</span>
     <span class="chip" id="notebook-chip">slivingdoc: not connected</span>
     <span class="chip" id="key-chip">OpenAI key: not set</span>
+    <button id="peek" class="peek" aria-expanded="false" aria-controls="hood">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+      Peek under the hood
+    </button>
   </div>
 </header>
-<main class="split">
+<main class="stage">
   <section class="app" id="app" aria-label="Minutes">
     <nav class="sidebar" aria-label="Meetings">
-      <button id="new" class="primary">New recording</button>
-      <div class="sidehead">
-        <span>Meetings</span>
-        <button id="refresh" class="link">Refresh</button>
+      <button id="new" class="primary new">
+        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor"/></svg>
+        New recording
+      </button>
+      <div id="meetings" class="meetings"></div>
+      <p id="empty" class="quiet empty">No meetings in the notebook yet.</p>
+      <div class="notebook">
+        <div id="notebook-status">Notebook: on this machine</div>
+        <code id="notebook-path">~/notebook/meetings/</code>
+        <button id="connect" class="inline">Connect slivingdoc</button>
       </div>
-      <ul id="meetings" class="meetings"></ul>
-      <p id="empty" class="quiet">No meetings in the notebook yet.</p>
-      <button id="connect" class="secondary">Connect notebook</button>
     </nav>
+
     <div class="content">
-      <form id="key-form" class="card">
-        <label for="key-input"><strong>OpenAI API key</strong></label>
-        <p class="quiet">The agent transcribes with speaker labels and writes the summary with it. It stays in this tab, as <code>OPENAI_API_KEY</code> for every run.</p>
-        <div class="row">
-          <input id="key-input" type="password" autocomplete="off" placeholder="sk-…">
-          <button class="primary">Use key</button>
-        </div>
-      </form>
+      <div id="setup" class="setup">
+        <form id="key-form" class="card">
+          <label for="key-input"><strong>OpenAI API key</strong></label>
+          <p class="quiet">The agent transcribes with speaker labels and writes the summary with it. It stays in this tab and reaches only the agent, as <code>OPENAI_API_KEY</code>.</p>
+          <div class="row">
+            <input id="key-input" type="password" autocomplete="off" placeholder="sk-…">
+            <button class="primary">Use key</button>
+          </div>
+        </form>
+        <form id="notebook-form" class="card" hidden>
+          <label for="token-input"><strong>slivingdoc token</strong> <span class="quiet">optional</span></label>
+          <p class="quiet">Keeps the notes in your hosted notebook. Create a token at <a href="https://www.slivingdoc.dev" target="_blank" rel="noopener">slivingdoc.dev</a>; without one, the notes stay in this tab.</p>
+          <div class="row">
+            <input id="token-input" type="password" autocomplete="off" placeholder="slivingdoc API token">
+            <button class="secondary">Use token</button>
+          </div>
+        </form>
+      </div>
+
       <p id="status" class="status" role="status"></p>
 
-      <section data-view="record" class="card">
+      <section data-view="record" class="stack-lg">
         <h1>New recording</h1>
-        <form id="record-form" class="stack">
+        <form id="record-form" class="card stack">
           <label for="title">Meeting name</label>
           <input id="title" placeholder="Daily sync">
           <label for="details">Who is there, and anything else the agent should know</label>
           <textarea id="details" rows="3" placeholder="Remote call with Ada and Grace"></textarea>
-          <button class="primary">Record</button>
-          <p class="quiet">The agent picks the audio: your microphone, and a shared tab's audio for a call. It asks for the tab when it needs it.</p>
+          <button class="primary">Start recording</button>
+          <p class="quiet">The agent records your microphone, and a tab's audio when you share one for a call.</p>
         </form>
       </section>
 
-      <section data-view="recording" class="card" hidden>
-        <h1 id="rec-title">Meeting</h1>
-        <div class="recbar">
-          <span id="rec-timer">Starting the agent…</span>
-          <div class="level" aria-hidden="true"><div id="level"></div></div>
-          <button id="stop" class="dark" hidden>Stop recording</button>
+      <section data-view="meeting" class="stack-lg" hidden>
+        <div class="meeting-head">
+          <div>
+            <h1 id="meeting-title">Meeting</h1>
+            <div id="meeting-meta" class="quiet"></div>
+          </div>
+          <div class="actions">
+            <button id="share-tab" class="secondary" hidden>Share a tab</button>
+            <button id="stop" class="dark" hidden>
+              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+              Stop and summarize
+            </button>
+          </div>
         </div>
-        <ol id="stages" class="stages"></ol>
-        <div id="agent-reply" hidden>
+
+        <div id="recbar" class="card recbar" hidden>
+          <span id="rec-state" class="rec-state">Starting the agent…</span>
+          <div id="wave" class="wave" aria-hidden="true"></div>
+          <span id="rec-inputs" class="quiet rec-inputs">Mic</span>
+        </div>
+
+        <ol id="stages" class="stages" hidden></ol>
+
+        <div id="agent" class="card" hidden>
           <h2>The agent says</h2>
-          <pre id="agent-text" class="reply"></pre>
+          <p id="agent-text" class="prose"></p>
           <form id="reply-form" class="row">
             <label for="reply" class="sr-only">Answer the agent</label>
             <input id="reply" placeholder="Answer the agent, such as who Speaker A is">
             <button class="secondary">Send</button>
           </form>
         </div>
-      </section>
 
-      <section data-view="meeting" class="card" hidden>
-        <h1 id="meeting-title"></h1>
-        <p id="meeting-meta" class="quiet"></p>
-        <pre id="meeting-body" class="reply"></pre>
-        <p class="quiet">In the notebook as <code id="meeting-path"></code></p>
+        <div class="cards">
+          <article class="card summary">
+            <h2>Summary</h2>
+            <div id="summary" class="prose"></div>
+          </article>
+          <article class="card transcript">
+            <h2>Transcript</h2>
+            <div id="transcript" class="prose"></div>
+          </article>
+        </div>
+
+        <div id="saved" class="quiet" hidden>
+          Saved to the notebook as <code id="saved-path"></code> · <button id="history" class="inline">history</button>
+        </div>
+        <ul id="history-list" class="history" hidden></ul>
       </section>
     </div>
   </section>
@@ -87,15 +130,21 @@
         <button role="tab" data-tab="io" aria-selected="false">Network and files</button>
         <button role="tab" data-tab="terminal" aria-selected="false">Terminal</button>
       </div>
+      <button id="peek-close" class="close" aria-label="Close the peek">✕</button>
     </div>
     <div class="panels">
       <div class="panel active" data-panel="activity">
         <div id="hood-last" class="last" hidden>
           <div class="quiet">You clicked <strong id="hood-label"></strong>, which ran</div>
           <code id="hood-command"></code>
+          <div id="hood-hint" class="quiet hint" hidden></div>
         </div>
-        <h2>Processes</h2>
-        <ul id="hood-tree" class="tree"></ul>
+        <p id="hood-idle" class="quiet">Every button of Minutes runs a program on a WASIX v2 machine in this tab. Click one to see what it starts, opens and connects to.</p>
+        <div class="activity-col">
+          <h2>Processes</h2>
+          <ul id="hood-tree" class="tree"></ul>
+        </div>
+        <div class="activity-col">
         <div class="loghead">
           <h2>Events</h2>
           <div class="filters">
@@ -108,6 +157,7 @@
         </div>
         <ul id="hood-log" class="log"></ul>
         <p id="hood-dropped" class="quiet" hidden></p>
+        </div>
       </div>
       <div class="panel" data-panel="io">
         <h2>Connections</h2>

@@ -21,6 +21,30 @@ export function describe(proc) {
   return [base(proc.path), ...argv.slice(1)].join(" ");
 }
 
+// What a process is, in a few words, and a state worth a tag while it runs.
+export function label(proc) {
+  const has = (arg) => proc.argv.includes(arg);
+  switch (proc.name) {
+    case "clai":
+      return { note: "the agent · Go, GOOS=wasix" };
+    case "slivingdoc":
+      return { note: has("serve") ? "notebook MCP server" : "notebook CLI" };
+    case "slivingdoc-git2":
+      return { note: "libgit2 · WASI" };
+    case "mcp-server-filesystem":
+    case "duckduckgo-mcp-server":
+      return { note: "MCP server" };
+    case "npx":
+    case "uvx":
+      return { note: "launcher" };
+    case "ffmpeg":
+      if (has("-i")) return { note: "WASI", tag: "recording" };
+      return { note: has("-sources") || has("-sinks") ? "lists audio devices" : "WASI" };
+    default:
+      return { note: "" };
+  }
+}
+
 export class Machine {
   constructor() {
     this.procs = new Map();
@@ -65,7 +89,7 @@ export class Machine {
             if (fd && Number(pid) === e.ppid && !this.fds.has(`${e.pid}:${n}`)) this.fds.set(`${e.pid}:${n}`, fd);
           }
         }
-        this.note(e, "exec", describe(proc), proc);
+        this.note(e, "exec", `${describe(proc)} · pid ${e.pid}`, proc);
         break;
       }
       case "exit": {
@@ -96,8 +120,9 @@ export class Machine {
           const r = this.resource("file", e.path, proc);
           r.writes += 1;
           this.note(e, "fs", `${proc?.name ?? e.pid} writes ${e.path}`, proc);
-        } else if (e.path.startsWith("/run/audio/") && !e.path.endsWith("/play")) {
-          this.note(e, "audio", `${this.procs.get(e.pid)?.name ?? e.pid} opens ${e.path}: the page captures it`,
+        } else if (e.path === "/run/audio/mic" || e.path === "/run/audio/tab") {
+          const what = e.path.endsWith("mic") ? "the microphone" : "a shared tab's audio";
+          this.note(e, "audio", `${this.procs.get(e.pid)?.name ?? e.pid} opens ${e.path} · the page captures ${what} at 48 kHz`,
             this.procs.get(e.pid));
         }
         break;
@@ -173,7 +198,8 @@ export class Machine {
     return r;
   }
 
-  // The processes an action started, as a tree: [{proc, children}].
+  // The processes an action started, as a tree: [{proc, children}]. A wrapper that only
+  // runs the program of its own name (/usr/local/bin/ffmpeg) is one node with it.
   tree(action) {
     const mine = [...this.procs.values()].filter((p) => p.action === action);
     const byParent = new Map();
@@ -182,8 +208,24 @@ export class Machine {
       siblings.push(p);
       byParent.set(p.ppid, siblings);
     }
-    const build = (p) => ({ proc: p, children: (byParent.get(p.pid) ?? []).map(build) });
+    const build = (p) => {
+      let children = byParent.get(p.pid) ?? [];
+      if (children.length === 1 && children[0].name === p.name) children = byParent.get(children[0].pid) ?? [];
+      return { proc: p, children: children.map(build) };
+    };
     return mine.filter((p) => !mine.some((q) => q.pid === p.ppid)).map(build);
+  }
+
+  // The rows of `tree(action)` to draw, each with its prefix of tree lines.
+  rows(action) {
+    const rows = [];
+    const walk = (node, lead, last, root) => {
+      rows.push({ proc: node.proc, prefix: root ? "" : `${lead}${last ? "└ " : "├ "}` });
+      const next = root ? "" : `${lead}${last ? "  " : "│ "}`;
+      node.children.forEach((child, i) => walk(child, next, i === node.children.length - 1, false));
+    };
+    for (const root of this.tree(action)) walk(root, "", true, true);
+    return rows;
   }
 
   // The processes of `action` named `name`, newest first.
@@ -221,11 +263,12 @@ export class HoodView {
     machine.onChange(() => this.schedule());
   }
 
-  // The app ran `command` for the button `label`.
-  ran(label, action, command) {
+  // The app ran `command` for the button `label`; `hint` says what else the button does.
+  ran(label, action, command, hint = "") {
     this.action = action;
     this.label = label;
     this.command = command;
+    this.hint = hint;
     this.schedule();
   }
 
@@ -243,7 +286,10 @@ export class HoodView {
     if (this.action) {
       $("#hood-label").textContent = this.label;
       $("#hood-command").textContent = mask(this.command);
+      $("#hood-hint").textContent = this.hint;
+      $("#hood-hint").hidden = !this.hint;
       $("#hood-last").hidden = false;
+      $("#hood-idle").hidden = true;
     }
     this.renderTree($("#hood-tree"));
     this.renderLog($("#hood-log"));
@@ -256,26 +302,27 @@ export class HoodView {
   renderTree(list) {
     list.replaceChildren();
     if (!this.action) return;
-    const rows = [];
-    const walk = (node, depth) => {
-      rows.push([node.proc, depth]);
-      for (const child of node.children) walk(child, depth + 1);
-    };
-    for (const root of this.machine.tree(this.action)) walk(root, 0);
-    for (const [proc, depth] of rows.slice(-40)) {
+    for (const { proc, prefix } of this.machine.rows(this.action).slice(-40)) {
       const li = document.createElement("li");
-      li.style.paddingLeft = `${depth * 16}px`;
       const pid = document.createElement("span");
       pid.className = "pid";
       pid.textContent = String(proc.pid);
+      const lines = document.createElement("span");
+      lines.className = "lines";
+      lines.textContent = prefix;
       const name = document.createElement("span");
       name.className = "name";
       name.textContent = mask(describe(proc));
       name.title = mask(proc.argv.join(" "));
+      const { note, tag } = label(proc);
+      const about = document.createElement("span");
+      about.className = "about";
+      about.textContent = note;
       const state = document.createElement("span");
-      state.className = `state ${proc.end === null ? "running" : proc.status?.startsWith("exit 0") ? "ok" : "failed"}`;
-      state.textContent = proc.end === null ? "running" : proc.status;
-      li.append(pid, name, state);
+      const running = proc.end === null;
+      state.className = `state ${running ? (tag ?? "running") : proc.status?.startsWith("exit 0") ? "ok" : "failed"}`;
+      state.textContent = running ? (tag ?? "running") : proc.status;
+      li.append(pid, lines, name, about, state);
       list.append(li);
     }
   }

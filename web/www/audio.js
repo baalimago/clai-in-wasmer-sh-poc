@@ -35,14 +35,17 @@ registerProcessor("capture", Capture);
 `;
 
 export class AudioInputs {
-  // `send(name, bytes)` hands captured samples to the machine; `notice(text)` tells the user.
-  constructor(send, notice) {
+  // `send(name, bytes)` hands captured samples to the machine; `notice(text)` tells the user;
+  // `offer(share)` puts a button up that calls `share` (from a click: the browser asks for
+  // the tab), and `offer(null)` takes it down. `changed()` follows what is captured.
+  constructor(send, notice, offer, changed = () => {}) {
     this.send = send;
     this.notice = notice;
+    this.offer = offer;
+    this.changed = changed;
     this.context = null;
     this.ready = null;
     this.active = new Map();
-    this.button = null;
   }
 
   // Captures exactly the inputs `names` lists.
@@ -79,6 +82,7 @@ export class AudioInputs {
     input.node.connect(context.destination);
     if (name === "mic") this.attach(name, input, navigator.mediaDevices.getUserMedia({ audio: true }));
     if (name === "tab") this.offerTab(name, input);
+    this.changed();
   }
 
   async attach(name, input, request) {
@@ -97,31 +101,35 @@ export class AudioInputs {
     input.stream = stream;
     input.source = this.context.createMediaStreamSource(stream);
     input.source.connect(input.node);
+    this.changed();
   }
 
   // getDisplayMedia needs a click, so a button asks for the tab whose audio to record.
   offerTab(name, input) {
-    const button = document.createElement("button");
-    button.className = "share-audio";
-    button.textContent = "🔊 Share a tab's audio for the recording (a meeting tab, say)";
-    button.onclick = () => {
-      button.remove();
+    input.offered = true;
+    this.offer(() => {
+      this.offer(null);
+      input.offered = false;
       this.attach(name, input, navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: { echoCancellation: false, noiseSuppression: false },
         preferCurrentTab: false,
       }));
-    };
-    document.body.append(button);
-    input.button = button;
+    });
+  }
+
+  // The inputs captured now, and whether each has a source yet.
+  inputs() {
+    return [...this.active].map(([name, input]) => ({ name, live: input.stream !== null }));
   }
 
   stop(name, input) {
     this.active.delete(name);
-    input.button?.remove();
+    if (input.offered) this.offer(null);
     input.source?.disconnect();
     input.node?.disconnect();
     if (input.node) input.node.port.onmessage = null;
     input.stream?.getTracks().forEach((t) => t.stop());
+    this.changed();
   }
 }

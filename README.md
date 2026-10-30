@@ -27,30 +27,34 @@ needs no browser.
 
 ## Minutes, and under the hood
 
-The page is split. The left half is **Minutes**, a meeting-notes app; the right half shows what
-the machine does for it, with the terminal as one of its tabs. Every button of the app runs a
-line in that terminal, as if typed, after what the terminal runs, with a `# <button>, from
-Minutes` comment above it:
+The page is **Minutes**, a meeting-notes app. **Peek under the hood** opens the machine it runs
+on below it: what each click started, opened and connected to, and the machine's terminal.
+Nothing the app does needs the peek; its buttons run programs on the machine directly:
 
-| Button | Line |
+| Button | Runs |
 | --- | --- |
-| Record | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber@13 query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook` |
-| Stop recording | Enter on the terminal, which ends clai's `audio_record` |
-| Send (answer the agent) | the same, with `-re` and the answer as the query |
-| Connect notebook | `slivingdoc login`, in `~/notebook` (the Terminal tab opens for its link) |
-| Refresh, or a meeting | `find meetings/summaries`, `cat` of the meeting's summary |
+| Start recording | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber@13 query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook` |
+| Stop and summarize | types Enter on the console, which ends clai's `audio_record` |
+| Share a tab | asks the browser for the tab whose audio the recording takes (shown while the agent records a tab) |
+| Send (answer the agent) | the same `clai`, with `-re` and the answer as the query |
+| A meeting | `cat` of its summary and transcript, rendered as markdown |
+| history | `slivingdoc log` |
 
 The agent is the whole transcriber: it records (its `audio_record` tool starts ffmpeg), transcribes
-with speaker labels (`gpt-4o-transcribe-diarize`, so the app asks for `OPENAI_API_KEY`, which it
-passes to every run and never shows unmasked), and files the notes with slivingdoc. The app only
-puts the notebook's layout (`meetings/summaries/<start>_<slug>.md` and
-`meetings/transcripts/...`) at the top of the query, so the profile stays as it is.
+with speaker labels (`gpt-4o-transcribe-diarize`, so the app asks for `OPENAI_API_KEY`), and files
+the notes. The app only puts the notebook's layout (`meetings/summaries/<start>_<slug>.md` and
+`meetings/transcripts/...`) at the top of the query, so the profile stays as it is. Without a
+slivingdoc token the notes stay in `~/notebook` in the tab; with one (from slivingdoc.dev, under
+Connect slivingdoc), every run gets `SLIVINGDOC_TOKEN`, so the agent's slivingdoc server writes to
+the hosted notebook and the list pulls it first. When the agent is done, the meeting it filed opens
+as Summary and Transcript cards; what it says shows as markdown (`marked`, with raw HTML shown as
+text and links to the notebook's files opening them in the app).
 
-A line sends what the app reads to `/run/page/out`, a write-only file whose every write, once
+Programs send what the app reads to `/run/page/out`, a write-only file whose every write, once
 closed, reaches the page as one message whose first line names it (`reply`, `meetings`,
-`meeting`); the rest of what it prints stays in the terminal.
+`meeting`, `history`).
 
-The right half is built from the kernel itself: the WASIX v2 trace layer
+The peek is built from the kernel itself: the WASIX v2 trace layer
 (`components/wasmer/lib/wasixv2/trace`) reports each `execve`, exit, open, `connect`, `dup`,
 close, rename, mkdir and unlink that succeeds, and the bytes through each descriptor, for every
 process, WASIX v1 programs such as bash and ffmpeg included. `web/src/observe.rs` keeps them
@@ -58,7 +62,7 @@ until the page takes them, as JSON, adding up the bytes a descriptor moves betwe
 events and naming the host behind each address the WISP network handed out. Each line runs as
 `bash -c LINE TAG`, so a process's tag, from its `$0` and inherited by what it starts, says which
 click or terminal line it belongs to. The view (`web/www/hood.js`) shows the last click's line
-and its process tree, the event log, the connections by host and the files written, with the
+and its process tree (each process labelled: the agent, an MCP server, libgit2, the recording ffmpeg), the event log, the connections by host and the files written, with the
 bytes moved through redirections and inherited descriptors counted for the file or connection
 behind them. The app's progress steps come from the same events: the ffmpeg with an input is the
 recording, a connection to api.openai.com after it the transcription, one from slivingdoc the
