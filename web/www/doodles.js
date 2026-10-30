@@ -90,6 +90,7 @@ export class Doodles {
 
   start() {
     const bar = this.doc.querySelector("#recbar");
+    this.bar = bar;
     if (!bar || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const check = () => {
       const on = (bar.classList.contains("waiting") || bar.classList.contains("summarizing")) && !bar.hidden;
@@ -175,12 +176,38 @@ export class Doodles {
   async loop(run) {
     const live = () => run === this.run && this.layer;
     await sleep(500);
+    let turn = 0;
     while (live()) {
+      if (this.bar?.classList.contains("waiting") && turn++ % 3 === 0) {
+        await this.swirl(live);
+        await sleep(rand(250, 600));
+        continue;
+      }
       const line = Math.random() < 0.5 ? this.nextLine() : null;
       const done = line ? await this.scribble(line, live) : await this.shape(live);
       if (!done && live()) await this.rubOut();
       await sleep(rand(250, 900));
     }
+  }
+
+  // The loops beside "Starting the agent…": drawn on the rule under the recording bar's wave,
+  // rubbed out and drawn again.
+  async swirl(live) {
+    const wave = this.bar.querySelector(".wave")?.getBoundingClientRect();
+    if (!wave || !wave.width) return;
+    const box = this.content.getBoundingClientRect();
+    const x = wave.left - box.left + this.content.scrollLeft;
+    const y = wave.top - box.top + this.content.scrollTop + 16;
+    if (this.swirled) {
+      const old = this.swirled;
+      old.classList.add("gone");
+      setTimeout(() => old.remove(), 700);
+    }
+    const g = this.group({ x, y });
+    this.swirled = g;
+    let d = "M0 24";
+    for (let t = -Math.PI / 2; t <= 8 * Math.PI * 2; t += 0.3) d += ` L${pt(6 + 5.6 * (t + Math.PI / 2) - 12 * Math.sin(t), 12 - 12 * Math.cos(t), 0.6)}`;
+    await this.draw(this.stroke(g, d), 3200, live);
   }
 
   async shape(live) {

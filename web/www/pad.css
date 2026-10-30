@@ -126,9 +126,6 @@ body, .top { background: var(--pad-paper); }
 .pencil > svg { position: absolute; left: -1px; top: -10px; transform-origin: 1px 50%; transform: rotate(28deg); filter: drop-shadow(10px 14px 5px rgba(40, 30, 10, .28)); transition: transform .18s ease-out; }
 .pencil.lifted > svg { transform: translate(6px, -8px) rotate(24deg) scale(1.03); filter: drop-shadow(18px 24px 8px rgba(40, 30, 10, .2)); }
 
-/* Until the agent records, the pencil doodles loops on the rule beside the status. */
-.recbar.waiting .wave { position: relative; overflow: visible; }
-.recbar.waiting .wave::before { content: ""; position: absolute; left: 0; top: -28px; width: 380px; height: 150px; pointer-events: none; background: url("./doodle.svg") no-repeat; }
 
 /* Signing in to slivingdoc is the first step: a sticky note taped on the pad until it is done
    or put off. */
