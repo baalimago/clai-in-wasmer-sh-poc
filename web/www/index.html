@@ -41,19 +41,29 @@
         <form id="key-form" class="card">
           <label for="key-input"><strong>OpenAI API key</strong></label>
           <p class="quiet">The agent transcribes with speaker labels and writes the summary with it. It stays in this tab and reaches only the agent, as <code>OPENAI_API_KEY</code>.</p>
+          <p class="quiet">Create a key just for this on <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI's API keys page</a>: a restricted key in a project with a small budget, which you delete when you are done, is the safest.</p>
           <div class="row">
             <input id="key-input" type="password" autocomplete="off" placeholder="sk-…">
             <button class="primary">Use key</button>
           </div>
         </form>
-        <form id="notebook-form" class="card" hidden>
-          <label for="token-input"><strong>slivingdoc token</strong> <span class="quiet">optional</span></label>
-          <p class="quiet">Keeps the notes in your hosted notebook. Create a token at <a href="https://www.slivingdoc.dev" target="_blank" rel="noopener">slivingdoc.dev</a>; without one, the notes stay in this tab.</p>
+        <section id="notebook-card" class="card" hidden>
+          <h2>Connect slivingdoc</h2>
+          <p class="quiet">Keeps the notes in your hosted notebook; without it, they stay in this tab. Sign in in a new tab, and the login stays in this browser.</p>
           <div class="row">
-            <input id="token-input" type="password" autocomplete="off" placeholder="slivingdoc API token">
-            <button class="secondary">Use token</button>
+            <button id="signin" class="primary">Sign in to slivingdoc</button>
           </div>
-        </form>
+          <div id="signin-wait" class="signin" hidden>
+            <p id="signin-text" class="quiet">Asking slivingdoc for a sign-in page…</p>
+            <p>Code <strong id="signin-code" class="code"></strong></p>
+            <a id="signin-link" target="_blank" rel="noopener">Open the sign-in page</a>
+          </div>
+          <form id="notebook-form" class="row">
+            <label for="token-input" class="sr-only">slivingdoc API token</label>
+            <input id="token-input" type="password" autocomplete="off" placeholder="or paste an API token from slivingdoc.dev">
+            <button class="secondary">Use token</button>
+          </form>
+        </section>
       </div>
 
       <p id="status" class="status" role="status"></p>

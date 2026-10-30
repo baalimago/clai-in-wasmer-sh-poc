@@ -174,3 +174,4 @@ td:first-child { word-break: break-all; color: #fff; }
   .log li { grid-template-columns: 80px 48px minmax(0, 1fr); }
   .log .from { display: none; }
 }
+.notebook .inline { align-self: flex-start; margin-top: 4px; }

@@ -111,19 +111,52 @@ export function summariesIn(reply) {
   return [...new Set(paths.filter((p) => p?.startsWith("meetings/summaries/")))];
 }
 
+// The sign-in page and code in what `slivingdoc login` printed so far, once it printed them.
+export function parseApproval(lines) {
+  const text = lines.join("\n");
+  const code = /approve the code (\S+?):/.exec(text)?.[1];
+  const url = /^\s*(https:\/\/\S+)$/m.exec(text)?.[1];
+  return code && url ? { code, url } : null;
+}
+
+// Who approved the login stored in slivingdoc's credentials file, if it says.
+export function accountOf(credentials) {
+  let found = null;
+  const walk = (value) => {
+    if (found || value === null || typeof value !== "object") return;
+    for (const [key, inner] of Object.entries(value)) {
+      if (key.toLowerCase() === "account" && typeof inner === "string") found = inner;
+      else walk(inner);
+    }
+  };
+  try {
+    walk(JSON.parse(credentials));
+  } catch {
+    return null;
+  }
+  return found;
+}
+
+const CREDENTIALS = "~/.config/slivingdoc/credentials.json";
+const STORED_LOGIN = "minutes.slivingdoc-credentials";
+
 const transcriptOf = (summary) => summary.replace("meetings/summaries/", "meetings/transcripts/");
 
 export class Minutes {
   // `machine.run(line, action)` runs a line on the machine and resolves to its status;
   // `machine.type(text)` types on its console. `hood` shows what a click ran, `model` is what
   // the machine did, `env` the variables every run gets, `audio` the inputs being captured.
-  constructor({ root, machine, hood, model, env, audio, config }) {
+  // `store` keeps the slivingdoc login in the browser: get(key), set(key, value).
+  constructor({ root, machine, hood, model, env, audio, store, config }) {
     this.root = root;
     this.machine = machine;
     this.hood = hood;
     this.model = model;
     this.env = env;
     this.audio = audio;
+    this.store = store;
+    this.streams = new Map();
+    this.login = null;
     this.config = { ...DEFAULTS, ...config };
     this.meetings = [];
     this.waiters = new Map();
@@ -156,6 +189,7 @@ export class Minutes {
     secret("#key-form", "#key-input", "OPENAI_API_KEY");
     secret("#notebook-form", "#token-input", "SLIVINGDOC_TOKEN");
     $("#new").onclick = () => this.show("record");
+    $("#signin").onclick = () => this.signin(window.open("about:blank", "_blank"));
     $("#connect").onclick = () => {
       this.connecting = !this.connecting;
       this.render();
@@ -184,7 +218,56 @@ export class Minutes {
   }
 
   get connected() {
-    return this.env.has("SLIVINGDOC_TOKEN");
+    return this.env.has("SLIVINGDOC_TOKEN") || this.login !== null;
+  }
+
+  // Puts back the slivingdoc login this browser kept, then lists the notebook.
+  async start() {
+    const credentials = this.store.get(STORED_LOGIN);
+    if (credentials) {
+      const line = `mkdir -p ~/.config/slivingdoc && printf '%s' "$SLIVINGDOC_CREDENTIALS" > ${CREDENTIALS}`;
+      const { status } = await this.run("Restore the slivingdoc login", line, {
+        followUp: true, env: { SLIVINGDOC_CREDENTIALS: credentials },
+      });
+      if (status === 0) this.login = accountOf(credentials) ?? "signed in";
+    }
+    this.render();
+    await this.refresh(true);
+  }
+
+  // `slivingdoc login` in the machine: its sign-in page opens in `tab` (opened by the click,
+  // as only a click may open one), and once approved, the login it stored is kept here.
+  async signin(tab) {
+    const lines = [];
+    const $ = this.$;
+    this.signing = { text: "Asking slivingdoc for a sign-in page…" };
+    this.render();
+    this.streams.set("login", (line) => {
+      lines.push(line.replace(/\n$/, ""));
+      const approval = parseApproval(lines);
+      if (approval && !this.signing.url) {
+        this.signing = { ...approval, text: "Approve the code on slivingdoc's page, in the tab that opened." };
+        if (tab && !tab.closed) tab.location.href = approval.url;
+        this.render();
+      }
+    });
+    const line = "slivingdoc login --no-browser </dev/null 2>&1 | " +
+      "while IFS= read -r line; do printf 'login\n%s\n' \"$line\" > /run/page/out; done; s=${PIPESTATUS[0]}; " +
+      `[ $s = 0 ] && { echo credentials; cat ${CREDENTIALS}; } > /run/page/out; exit $s`;
+    const { status, body } = await this.run("Sign in to slivingdoc", line, { topic: "credentials" });
+    this.streams.delete("login");
+    if (status !== 0 || !body) {
+      if (tab && !tab.closed && !this.signing.url) tab.close();
+      this.signing = { text: `The sign-in did not finish: ${lines.filter(Boolean).at(-1) ?? `exit ${status}`}` };
+      this.render();
+      return;
+    }
+    this.store.set(STORED_LOGIN, body);
+    this.login = accountOf(body) ?? "signed in";
+    this.signing = null;
+    this.connecting = false;
+    this.render();
+    await this.refresh();
   }
 
   // A message from /run/page/out: its first line says what it answers.
@@ -192,6 +275,7 @@ export class Minutes {
     const text = new TextDecoder().decode(bytes);
     const at = text.indexOf("\n");
     const [topic, body] = at < 0 ? [text, ""] : [text.slice(0, at), text.slice(at + 1)];
+    this.streams.get(topic)?.(body);
     const waiter = this.waiters.get(topic);
     if (waiter) {
       this.waiters.delete(topic);
@@ -202,11 +286,11 @@ export class Minutes {
   // Runs `line` for the button `label`, and resolves to its status and what it sent to the
   // page under `topic`, if it names one. A `followUp` the app ran on its own leaves the hood
   // on the last click.
-  async run(label, line, { topic, followUp = false, hint = "" } = {}) {
+  async run(label, line, { topic, followUp = false, hint = "", env } = {}) {
     const action = `minutes:${label}#${++this.actions}`;
     const sent = topic ? new Promise((resolve) => this.waiters.set(topic, resolve)) : null;
     if (!followUp) this.hood.ran(label, action, line, hint);
-    const status = await this.machine.run(line, action);
+    const status = await this.machine.run(line, action, env);
     const body = sent ? await Promise.race([sent, new Promise((r) => setTimeout(() => r(null), 2000))]) : null;
     if (topic) this.waiters.delete(topic);
     return { status, body, action };
@@ -389,9 +473,17 @@ export class Minutes {
     const $ = this.$;
     const keyed = this.env.has("OPENAI_API_KEY");
     $("#key-chip").textContent = keyed ? `OpenAI key: ${mask(`KEY=${this.env.get("OPENAI_API_KEY")}`).slice(4)}` : "OpenAI key: not set";
-    $("#notebook-chip").textContent = this.connected ? "slivingdoc: connected" : "slivingdoc: local notebook";
+    $("#notebook-chip").textContent = this.login ? `slivingdoc: ${this.login}` : this.connected ? "slivingdoc: connected" : "slivingdoc: local notebook";
     $("#key-form").hidden = keyed;
-    $("#notebook-form").hidden = this.connected || !this.connecting;
+    $("#notebook-card").hidden = this.connected || !this.connecting;
+    $("#signin").disabled = Boolean(this.signing);
+    $("#signin-wait").hidden = !this.signing;
+    if (this.signing) {
+      $("#signin-text").textContent = this.signing.text;
+      $("#signin-code").textContent = this.signing.code ?? "…";
+      $("#signin-link").hidden = !this.signing.url;
+      if (this.signing.url) $("#signin-link").href = this.signing.url;
+    }
     $("#connect").hidden = this.connected;
     $("#notebook-status").textContent = this.connected ? "Notebook: slivingdoc" : "Notebook: in this tab";
     for (const view of this.root.querySelectorAll("[data-view]")) view.hidden = view.dataset.view !== (this.view ?? "record");

@@ -6,7 +6,8 @@ import { test } from "node:test";
 import { Machine, describe, label, mask } from "./www/hood.js";
 import { notePath, renderMarkdown } from "./www/markdown.js";
 import {
-  describeFile, groupMeetings, meetingMeta, parseList, parseNote, replyText, summariesIn,
+  accountOf, describeFile, groupMeetings, meetingMeta, parseApproval, parseList, parseNote, replyText,
+  summariesIn,
 } from "./www/minutes.js";
 
 const exec = (pid, ppid, path, argv, t = 1) => ({ t, type: "exec", pid, ppid, path, argv });
@@ -145,4 +146,14 @@ test("the agent's links to the notebook open in the app, and its HTML stays text
   assert.match(html, /<strong>Summary:<\/strong> &lt;img/);
   assert.doesNotMatch(html, /javascript:|<img/);
   assert.match(html, /<a href="https:\/\/example.com" target="_blank" rel="noopener">docs<\/a>/);
+});
+
+test("slivingdoc's login gives its sign-in page and code, then who approved it", () => {
+  const lines = ["To log in, open this page and approve the code FDFS-RLGM:"];
+  assert.equal(parseApproval(lines), null);
+  lines.push("  https://www.slivingdoc.dev/cli/login#FDFS-RLGM", "(or open https://www.slivingdoc.dev/cli/login and enter the code)");
+
+  assert.deepEqual(parseApproval(lines), { code: "FDFS-RLGM", url: "https://www.slivingdoc.dev/cli/login#FDFS-RLGM" });
+  assert.equal(accountOf('{"logins":[{"Key":"k","Account":"ada@example.com"}]}'), "ada@example.com");
+  assert.equal(accountOf("not json"), null);
 });

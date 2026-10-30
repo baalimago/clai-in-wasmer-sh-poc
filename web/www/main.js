@@ -110,15 +110,17 @@ term.writeln(bash
 document.querySelector("#machine-chip").textContent = "wasmer.sh · WASIX v2 kernel: running";
 term.onResize(() => worker.postMessage({ size: size() }));
 
-// Runs `args` from `path`, resolving to its exit status and streaming what it prints.
+// Runs `args` from `path`, with `env` and `extra` (variables for this run only), resolving to
+// its exit status and streaming what it prints.
 const env = new Map();
-const exec = (path, args) => new Promise((resolve) => {
+const exec = (path, args, extra = {}) => new Promise((resolve) => {
   finished = (status) => {
     // As bash does, the prompt goes on a new line after ^C killed the program.
     if (status === 128 + 2) term.write("\r\n");
     resolve(status);
   };
-  worker.postMessage({ path, args, env: [...env].map(([key, value]) => `${key}=${value}`) });
+  const vars = [...env, ...Object.entries(extra)];
+  worker.postMessage({ path, args, env: vars.map(([key, value]) => `${key}=${value}`) });
 });
 
 // Each line is a new `bash -c` in the page's working directory, so `cd` and `export` are
@@ -161,11 +163,11 @@ const builtins = {
   },
 };
 
-async function run(line, tag = "terminal") {
+async function run(line, tag = "terminal", extra = {}) {
   const args = split(line);
   if (args.length === 0) return 0;
   if (builtins[args[0]]) return (await builtins[args[0]](...args.slice(1))) ?? 0;
-  if (bash) return exec("/bin/bash", ["bash", "-c", `cd -- ${quote(cwd)} || exit\n${line}`, tag]);
+  if (bash) return exec("/bin/bash", ["bash", "-c", `cd -- ${quote(cwd)} || exit\n${line}`, tag], extra);
   return exec(args[0].includes("/") ? args[0] : `/bin/${args[0]}`, args);
 }
 
@@ -199,11 +201,11 @@ const serially = (task) => {
 };
 window.runCommand = (line) => serially(() => editor.submit(line));
 const machine = {
-  run: (line, action) => serially(async () => {
+  run: (line, action, extra) => serially(async () => {
     editor.busy = true;
     term.write(`\r\x1b[2K\x1b[2m# Minutes ran: ${line.replaceAll("\n", "; ")}\x1b[0m\r\n`);
     try {
-      return await run(line, action);
+      return await run(line, action, extra);
     } finally {
       editor.busy = false;
       term.write(editor.prompt + editor.line);
@@ -218,9 +220,26 @@ minutes = new Minutes({
   model,
   env,
   audio,
+  // Storage can be off (a private window, blocked site data): the login then lasts the tab.
+  store: {
+    get: (key) => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set: (key, value) => {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        // Kept for this tab only.
+      }
+    },
+  },
   config: window.minutesConfig ?? {},
 });
-minutes.refresh(true);
+minutes.start();
 window.minutes = minutes;
 
 if (bash) document.body.dataset.bash = "true";

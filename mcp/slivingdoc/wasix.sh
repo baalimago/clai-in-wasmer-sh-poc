@@ -58,6 +58,7 @@ printf 'go %s\n\nuse %s\n\nreplace golang.org/x/sys => ./xsys\n' "$goversion" "$
 cat >"$out/overlay.json" <<JSON
 {"Replace": {
   "$mod/internal/git2/native_wasix.go": "$here/native_wasix.go",
-  "$mod/stdin_wasix.go": "$here/stdin_wasix.go"
+  "$mod/stdin_wasix.go": "$here/stdin_wasix.go",
+  "$mod/internal/credentials/platform_unix.go": "$here/credentials_wasix.go"
 }}
 JSON
