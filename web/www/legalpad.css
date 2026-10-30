@@ -1,0 +1,143 @@
+/* Four takes on B4, the legal pad, from mild to a writing simulator (?look=b4a..b4d). They share
+   a pad where every line of text sits on a rule: each block's height is a whole number of rules,
+   and the rules are drawn at the text's baseline. legalpad.js writes the notes for b4b..b4d. */
+
+html[data-look^=b4]:not([data-look=b4]) { --rule: 32px; --base: 24px; --hand: Caveat, "Comic Sans MS", cursive; --ink: #34373d; --sheet: #fff5b4; --edge: #e7da8f; }
+
+/* The pad: a binding with punched holes, a blank head, a double margin, rules and grain. */
+html[data-look^=b4]:not([data-look=b4]) .app { position: relative; }
+html[data-look^=b4]:not([data-look=b4]) .content {
+  position: relative; margin: 18px 30px 0 22px; padding: calc(var(--rule) * 3) 56px calc(var(--rule) * 2) 110px;
+  gap: 0; font: 24px/var(--rule) var(--hand); color: var(--ink); border-radius: 3px 3px 0 0;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .38 0 0 0 0 .2 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(#6f5641, #4e3b29 24px, #3a2b1d 30px, rgba(40, 28, 16, .28) 30px, transparent 40px) 0 0 / 100% 40px no-repeat,
+    radial-gradient(circle at 50% 33px, rgba(40, 30, 20, .55) 0 5px, rgba(40, 30, 20, .15) 6px, transparent 7.5px) 34px 0 / 46px 46px repeat-x,
+    linear-gradient(transparent calc(var(--rule) * 2 - 6px), rgba(192, 57, 43, .45) calc(var(--rule) * 2 - 6px) calc(var(--rule) * 2 - 5px), transparent 0 calc(var(--rule) * 2 - 3px), rgba(192, 57, 43, .45) 0 calc(var(--rule) * 2 - 2px), transparent 0) 0 0 / 100% 100% no-repeat,
+    linear-gradient(var(--sheet) 0 calc(var(--rule) * 2 - 6px), transparent 0) 0 0 / 100% 100% no-repeat,
+    linear-gradient(90deg, transparent 78px, rgba(192, 57, 43, .5) 78px 79px, transparent 79px 82px, rgba(192, 57, 43, .42) 82px 83px, transparent 83px),
+    repeating-linear-gradient(transparent 0 calc(var(--rule) - 1px), #93bde4 calc(var(--rule) - 1px) var(--rule)) 0 calc(var(--base) + 1px) / 100% var(--rule),
+    linear-gradient(90deg, rgba(255, 255, 255, .35), transparent 30%, transparent 75%, rgba(150, 120, 40, .06)),
+    var(--sheet);
+  background-attachment: local;
+  box-shadow: 1px 1px 0 var(--edge), 3px 2px 0 var(--sheet), 4px 3px 0 var(--edge), 6px 4px 0 var(--sheet), 7px 5px 0 #d5c67c, 9px 6px 0 #c9b98a, 0 22px 44px -12px rgba(60, 45, 15, .4);
+}
+
+/* Every block is a whole number of rules tall, with nothing between them but rules. */
+html[data-look^=b4]:not([data-look=b4]) .content h1 { font: 700 60px/calc(var(--rule) * 2) var(--hand); position: relative; top: 4px; transform: rotate(-.6deg); color: #26282c; }
+html[data-look^=b4]:not([data-look=b4]) .meeting-head { align-items: center; gap: 0 16px; }
+html[data-look^=b4]:not([data-look=b4]) .meeting-head .quiet, html[data-look^=b4]:not([data-look=b4]) #meeting-meta { font: 22px/var(--rule) var(--hand); color: #75705f; }
+html[data-look^=b4]:not([data-look=b4]) .stack-lg, html[data-look^=b4]:not([data-look=b4]) .setup { gap: var(--rule) 48px; }
+html[data-look^=b4]:not([data-look=b4]) .stack { gap: 0; }
+html[data-look^=b4]:not([data-look=b4]) .content p { margin: 0; }
+html[data-look^=b4]:not([data-look=b4]) .content label { display: block; font: 700 24px/var(--rule) var(--hand); }
+html[data-look^=b4]:not([data-look=b4]) .content button { height: var(--rule); min-height: 0; line-height: var(--rule); padding: 0 14px; }
+html[data-look^=b4]:not([data-look=b4]) .row { margin-top: 0; gap: 0 12px; align-items: center; }
+html[data-look^=b4]:not([data-look=b4]) .content code { font-size: 14px; line-height: 1; }
+html[data-look^=b4]:not([data-look=b4]) .content .primary, html[data-look^=b4]:not([data-look=b4]) .content .dark, html[data-look^=b4]:not([data-look=b4]) .content .secondary { font: 700 21px/var(--rule) var(--hand); border-radius: 3px 8px 4px 9px / 9px 4px 8px 3px; align-self: flex-start; }
+html[data-look^=b4]:not([data-look=b4]) .content .secondary { background: rgba(255, 255, 255, .45); border: 1.5px solid #3b3b3b; }
+html[data-look^=b4]:not([data-look=b4]) .content input, html[data-look^=b4]:not([data-look=b4]) .content textarea {
+  height: var(--rule); padding: 0 6px; border: 0; border-radius: 0; font: 24px/var(--rule) var(--hand); color: #1f3a8a;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, .15)); box-shadow: none; outline: 0; resize: none;
+}
+html[data-look^=b4]:not([data-look=b4]) .content textarea { height: calc(var(--rule) * 3); }
+html[data-look^=b4]:not([data-look=b4]) .content input:focus, html[data-look^=b4]:not([data-look=b4]) .content textarea:focus { background: rgba(255, 255, 255, .65); }
+html[data-look^=b4]:not([data-look=b4]) .card { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+html[data-look^=b4]:not([data-look=b4]) .card > h2 { position: relative; top: -2px; display: inline-block; align-self: flex-start; margin: 0 0 var(--rule); padding: 0 12px; border: 0; font: 700 30px/var(--rule) var(--hand); color: var(--ink); }
+html[data-look^=b4]:not([data-look=b4]) .card > h2::before { content: ""; position: absolute; inset: -3px -2px 0 -4px; border: 2px solid rgba(192, 57, 43, .75); border-radius: 48% 52% 45% 55% / 60% 55% 45% 40%; transform: rotate(-2deg); }
+html[data-look^=b4]:not([data-look=b4]) .cards { gap: var(--rule) 56px; }
+html[data-look^=b4]:not([data-look=b4]) .status { padding: 0 10px; line-height: var(--rule); border-radius: 0; background: rgba(255, 255, 255, .45); }
+html[data-look^=b4]:not([data-look=b4]) .recbar { min-height: calc(var(--rule) * 2); padding: 0; gap: 0 16px; align-items: center; border: 0; background: none; box-shadow: none; }
+html[data-look^=b4]:not([data-look=b4]) .recbar::after { display: none; }
+html[data-look^=b4]:not([data-look=b4]) .wave { height: var(--rule); }
+html[data-look^=b4]:not([data-look=b4]) .rec-state { font: 700 30px/var(--rule) var(--hand); }
+html[data-look^=b4]:not([data-look=b4]) .rec-inputs { font: 21px/var(--rule) var(--hand); }
+html[data-look^=b4]:not([data-look=b4]) .stages { line-height: var(--rule); gap: 0 20px; font: 22px/var(--rule) var(--hand); }
+html[data-look^=b4]:not([data-look=b4]) .prose { font: 24px/var(--rule) var(--hand); color: var(--ink); }
+html[data-look^=b4]:not([data-look=b4]) .prose h1, html[data-look^=b4]:not([data-look=b4]) .prose h2, html[data-look^=b4]:not([data-look=b4]) .prose h3, html[data-look^=b4]:not([data-look=b4]) .prose h4 { font: 700 27px/var(--rule) var(--hand); margin: var(--rule) 0 0; position: relative; top: -1px; text-decoration: underline 2px; text-underline-offset: 5px; }
+html[data-look^=b4]:not([data-look=b4]) .prose p, html[data-look^=b4]:not([data-look=b4]) .prose ul, html[data-look^=b4]:not([data-look=b4]) .prose ol, html[data-look^=b4]:not([data-look=b4]) .prose pre, html[data-look^=b4]:not([data-look=b4]) .prose blockquote { margin: 0 0 var(--rule); }
+html[data-look^=b4]:not([data-look=b4]) .prose li p { margin: 0; }
+html[data-look^=b4]:not([data-look=b4]) .prose > :first-child { margin-top: 0; }
+html[data-look^=b4]:not([data-look=b4]) .prose > :last-child { margin-bottom: 0; }
+html[data-look^=b4]:not([data-look=b4]) .prose code, html[data-look^=b4]:not([data-look=b4]) #saved code { font-size: 14px; line-height: 1; }
+html[data-look^=b4]:not([data-look=b4]) .prose pre { line-height: var(--rule); white-space: pre-wrap; }
+html[data-look^=b4]:not([data-look=b4]) .transcript .prose { font-size: 22px; color: #55575c; }
+html[data-look^=b4]:not([data-look=b4]) #saved { font: 21px/var(--rule) var(--hand); }
+html[data-look^=b4]:not([data-look=b4]) .history li { line-height: var(--rule); }
+
+/* B4a · On the line: the pad above, and the notes inked in line by line when a meeting opens. */
+@keyframes lp-ink { from { clip-path: inset(0 100% 0 0); opacity: .4; } 60% { opacity: 1; } to { clip-path: inset(0 -3% 0 0); opacity: 1; } }
+html[data-look=b4a] .summary .prose > *, html[data-look=b4a] .transcript .prose > * { animation: lp-ink .9s cubic-bezier(.3, .1, .4, 1) both; }
+html[data-look=b4a] .transcript .prose > * { animation-duration: .6s; }
+
+/* B4b..B4d: legalpad.js writes the text; the line reveal above is off. */
+html:is([data-look=b4b], [data-look=b4c], [data-look=b4d]) .summary .prose > * { animation: none; }
+html[data-look^=b4]:not([data-look=b4]) .lp-w { white-space: nowrap; }
+html[data-look^=b4]:not([data-look=b4]) .lp-u { visibility: hidden; }
+html[data-look^=b4]:not([data-look=b4]) .lp-writing li:not(.lp-on)::marker { color: transparent; text-shadow: none; }
+html[data-look^=b4]:not([data-look=b4]) .lp-writing :is(h1, h2, h3, h4):not(.lp-on) { text-decoration-color: transparent; }
+.lp-tool { position: absolute; left: 0; top: 0; z-index: 5; width: 0; height: 0; pointer-events: none; transition: transform 70ms linear; }
+.lp-tool[hidden] { display: none; }
+.lp-tool > svg { position: absolute; transform-origin: 1px 50%; transform: rotate(28deg); filter: drop-shadow(10px 14px 5px rgba(40, 30, 10, .28)); transition: transform .18s ease-out; }
+.lp-tool.lp-lift > svg { transform: translate(6px, -8px) rotate(24deg) scale(1.03); filter: drop-shadow(18px 24px 8px rgba(40, 30, 10, .2)); }
+
+/* B4b · Pad on the desk: a stack of sheets on a linen desk, a curled corner, written in pencil
+   word by word. */
+html[data-look=b4b] .app { background: radial-gradient(1200px 700px at 30% 0, #f1ece0, transparent 70%), repeating-linear-gradient(90deg, rgba(120, 100, 70, .05) 0 2px, transparent 2px 5px), repeating-linear-gradient(0deg, rgba(120, 100, 70, .05) 0 2px, transparent 2px 5px), #e4dccb; }
+html[data-look=b4b] .content { --ink: #3d3f44; }
+html[data-look=b4b] .app::after { content: ""; position: absolute; right: 30px; bottom: 0; width: 70px; height: 70px; pointer-events: none; background: linear-gradient(135deg, transparent 49%, rgba(0, 0, 0, .12) 50%, #f8eeb0 53%, #fff9d4 70%, #e6d78a); border-top-left-radius: 0 0; box-shadow: -6px -6px 12px -6px rgba(0, 0, 0, .25); clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+html[data-look=b4b] .app::before { content: ""; position: absolute; right: 30px; bottom: 0; width: 70px; height: 70px; background: #e4dccb; z-index: 1; clip-path: polygon(100% 0, 100% 100%, 0 100%); pointer-events: none; }
+html[data-look=b4b] .app::after { z-index: 2; clip-path: polygon(0 100%, 100% 0, 0 0); }
+html[data-look=b4b] .lp-fresh { animation: lp-pencil .35s ease-out; }
+@keyframes lp-pencil { from { opacity: .15; filter: blur(.6px); } }
+html[data-look=b4b] .prose, html[data-look=b4b] .content h1 { color: #45474c; text-shadow: 0 0 .4px rgba(60, 60, 60, .5); }
+
+/* B4c · Fountain pen: blue-black ink, letter by letter, each letter a little off and wet for a
+   moment. */
+html:is([data-look=b4c], [data-look=b4d]) .prose, html:is([data-look=b4c], [data-look=b4d]) .content h1 { color: #1e2f6e; }
+html:is([data-look=b4c], [data-look=b4d]) .prose strong { color: #b3261e; }
+html:is([data-look=b4c], [data-look=b4d]) .transcript .prose { color: #3a4a80; }
+html:is([data-look=b4c], [data-look=b4d]) .lp-c { display: inline-block; transform: translateY(var(--y, 0)) rotate(var(--r, 0)); }
+/* Letters are boxes of their own here, which text-decoration skips: headings are underlined by a
+   stroke that is drawn once the heading is written. */
+html:is([data-look=b4c], [data-look=b4d]) .prose :is(h1, h2, h3, h4) { width: fit-content; text-decoration: none; background: linear-gradient(currentColor, currentColor) 0 calc(100% - 4px) / 100% 2px no-repeat; }
+html:is([data-look=b4c], [data-look=b4d]) .lp-writing :is(h1, h2, h3, h4) { transition: background-size .5s ease-out .2s; }
+html:is([data-look=b4c], [data-look=b4d]) .lp-writing :is(h1, h2, h3, h4):not(.lp-on) { background-size: 0 2px; }
+html:is([data-look=b4c], [data-look=b4d]) .lp-fresh { animation: lp-wet 1.6s ease-out; }
+@keyframes lp-wet { from { color: #0a1450; text-shadow: 0 0 1px rgba(10, 20, 90, .7), 0 0 3px rgba(40, 70, 200, .35); } }
+html[data-look=b4c] .app { background: linear-gradient(180deg, #ece6d8, #e1d8c5); }
+html:is([data-look=b4c], [data-look=b4d]) .content h1.lp-done::after, html:is([data-look=b4c], [data-look=b4d]) .lp-done > .content h1::after { content: none; }
+html:is([data-look=b4c], [data-look=b4d]) #meeting-title.lp-done { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='14' viewBox='0 0 300 14'%3E%3Cpath d='M2 9 C60 3 120 12 180 6 S270 4 298 8' fill='none' stroke='%23b3261e' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E") 0 100% / 100% 12px no-repeat; animation: lp-underline .7s ease-out both; }
+@keyframes lp-underline { from { background-size: 0 12px; } }
+
+/* B4d · Writing IRL: the pad lies tilted on a wooden desk under a lamp, a hand writes with
+   pauses, slips and crossings-out, and the page turns when another meeting opens. */
+html[data-look=b4d] .app {
+  perspective: 1600px;
+  background:
+    radial-gradient(900px 600px at 25% 10%, rgba(255, 220, 150, .35), transparent 65%),
+    radial-gradient(140% 120% at 50% 40%, transparent 55%, rgba(30, 15, 0, .35)),
+    repeating-linear-gradient(92deg, rgba(90, 50, 20, .0) 0 14px, rgba(90, 50, 20, .08) 14px 15px, rgba(90, 50, 20, 0) 15px 31px, rgba(255, 220, 170, .06) 31px 33px),
+    linear-gradient(90deg, #a8703f, #9a6235 40%, #a46d3c 70%, #94602f);
+}
+html[data-look=b4d] .sidebar { position: relative; z-index: 1; background: #f7f3ea; box-shadow: 6px 0 18px rgba(30, 15, 0, .3); }
+html[data-look=b4d] .content { margin: 26px 40px 0 34px; transform: rotateX(5deg) rotateZ(-.7deg); transform-origin: 50% 0; box-shadow: 1px 1px 0 var(--edge), 3px 2px 0 var(--sheet), 4px 3px 0 var(--edge), 6px 4px 0 var(--sheet), 7px 5px 0 #d5c67c, 9px 6px 0 #c9b98a, 11px 8px 0 #7a5b3a, -18px 30px 50px -10px rgba(30, 15, 0, .55); }
+html[data-look=b4d] .app::after { content: ""; position: absolute; right: 9%; top: 58%; width: 150px; height: 150px; border-radius: 50%; pointer-events: none; z-index: 2; background: radial-gradient(circle, transparent 60%, rgba(120, 70, 20, .16) 63%, rgba(120, 70, 20, .28) 66%, rgba(120, 70, 20, .08) 69%, transparent 71%); transform: rotate(20deg) scaleX(1.05); }
+html[data-look=b4d] .lp-typo { position: relative; color: #3a4a80; }
+html[data-look=b4d] .lp-typo::after { content: ""; position: absolute; left: -3px; right: -3px; top: 52%; height: 0; border-top: 2.5px solid #1e2f6e; transform: rotate(-3deg) scaleX(0); transform-origin: left; transition: transform .3s ease-out; }
+html[data-look=b4d] .lp-typo.lp-struck::after { transform: rotate(-3deg) scaleX(1); }
+html[data-look=b4d] .lp-tool > svg { filter: drop-shadow(16px 22px 7px rgba(30, 15, 0, .3)); }
+html[data-look=b4d] .lp-tool.lp-bob > svg:first-child { transform: rotate(28.6deg) translate(0, -.6px); }
+html[data-look=b4d] .lp-tool .lp-hand { transform: none; filter: none; transition: transform .25s ease-out; }
+html[data-look=b4d] .lp-tool.lp-lift .lp-hand { transform: translate(14px, 10px) scale(1.04); }
+html[data-look=b4d] .app.lp-flip::before {
+  content: ""; position: absolute; left: 314px; right: 40px; top: 26px; height: 92%; z-index: 4; pointer-events: none;
+  background: repeating-linear-gradient(transparent 0 31px, #93bde4 31px 32px) 0 24px, var(--sheet);
+  transform-origin: 50% 0; animation: lp-turn 1s cubic-bezier(.5, 0, .4, 1) both; box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+}
+@keyframes lp-turn { from { transform: rotateX(0); } to { transform: rotateX(-178deg); opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { html[data-look^=b4] .prose > * { animation: none !important; } }
+
+/* Twelve looks to pick from: a tighter picker keeps the header on one line. */
+.looks span { display: none; }
+.looks button { min-width: 26px; padding: 0 4px; }

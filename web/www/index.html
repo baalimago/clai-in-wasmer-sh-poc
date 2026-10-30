@@ -6,10 +6,11 @@
 <link rel="stylesheet" href="./style.css">
 <link rel="stylesheet" href="./looks.css">
 <link rel="stylesheet" href="./notebook.css">
+<link rel="stylesheet" href="./legalpad.css">
 <script>
-  // The app's look, to compare: ?look=a..d or b1..b4, else the last one picked.
+  // The app's look, to compare: ?look=a..d, b1..b4 or b4a..b4d, else the last one picked.
   (() => {
-    const looks = ["a", "b", "c", "d", "b1", "b2", "b3", "b4"];
+    const looks = ["a", "b", "c", "d", "b1", "b2", "b3", "b4", "b4a", "b4b", "b4c", "b4d"];
     let look = new URLSearchParams(location.search).get("look");
     try {
       look = looks.includes(look) ? look : localStorage.getItem("minutes.look");
@@ -33,6 +34,10 @@
     <button data-look="b2" title="Bullet journal">B2</button>
     <button data-look="b3" title="Index cards">B3</button>
     <button data-look="b4" title="Legal pad">B4</button>
+    <button data-look="b4a" title="Legal pad: on the line">4a</button>
+    <button data-look="b4b" title="Legal pad: pencil on the desk">4b</button>
+    <button data-look="b4c" title="Legal pad: fountain pen">4c</button>
+    <button data-look="b4d" title="Legal pad: writing IRL">4d</button>
   </div>
   <div class="chips">
     <span class="chip" id="machine-chip">wasmer.sh · WASIX v2 kernel: booting</span>
@@ -207,3 +212,4 @@
 </main>
 <div class="players"></div>
 <script type="module" src="./main.js"></script>
+<script type="module" src="./legalpad.js"></script>
