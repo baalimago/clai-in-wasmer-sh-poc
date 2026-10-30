@@ -89,9 +89,41 @@ $(WWW)/bin/launcher.sh: mcp/launcher.sh
 	@mkdir -p $(@D)
 	cp $< $@
 
-$(WWW)/bin/index.json: $(PROGRAMS:%=$(WWW)/bin/%.wasm) $(WWW)/bin/launcher.sh
-	node -e 'const [ports, launchers] = process.argv.slice(1).map((s) => s.split(" ")); console.log(JSON.stringify([...ports.map((name) => ({ name, file: `bin/$${name}.wasm` })), ...launchers.map((name) => ({ name, file: "bin/launcher.sh" }))], null, 2))' \
-		"$(PROGRAMS)" "$(LAUNCHERS)" > $@
+# Wrappers in /usr/local/bin, which comes before /bin on PATH: ffmpeg gives /bin/ffmpeg the
+# page's audio inputs as PulseAudio devices (audio/ffmpeg.sh).
+WRAPPERS := ffmpeg
+
+# ffmpeg and ffprobe for wasm32-wasi, built with the wasi-sdk from an ffmpeg release: audio only
+# and without threads (audio/ffmpeg/build.sh). Both are in /bin.
+FFMPEG_VERSION := 5.1.6
+FFMPEG_SHA256 := f4fa066278f7a47feab316fef905f4db0d5e9b589451949740f83972b30901bd
+FFMPEG_SRC := $(CURDIR)/.tools/ffmpeg-$(FFMPEG_VERSION)
+FFMPEG_BUILD := $(BUILD)/ffmpeg
+SHA256 := $(shell command -v sha256sum || echo shasum -a 256)
+
+$(FFMPEG_SRC)/configure:
+	mkdir -p $(FFMPEG_SRC)
+	curl -fsSL https://ffmpeg.org/releases/ffmpeg-$(FFMPEG_VERSION).tar.xz -o $(FFMPEG_SRC).tar.xz
+	echo "$(FFMPEG_SHA256)  $(FFMPEG_SRC).tar.xz" | $(SHA256) -c -
+	tar xJf $(FFMPEG_SRC).tar.xz -C $(FFMPEG_SRC) --strip-components 1
+	rm $(FFMPEG_SRC).tar.xz
+
+$(FFMPEG_BUILD)/ffmpeg: $(WASI_SDK) $(FFMPEG_SRC)/configure audio/ffmpeg/build.sh audio/ffmpeg/wasi_compat.h
+	audio/ffmpeg/build.sh $(WASI_SDK) $(FFMPEG_SRC) $(FFMPEG_BUILD)
+
+$(WWW)/bin/ffmpeg.wasm $(WWW)/bin/ffprobe.wasm: $(FFMPEG_BUILD)/ffmpeg
+	@mkdir -p $(@D)
+	cp $(FFMPEG_BUILD)/$(basename $(@F)) $@
+
+$(WWW)/bin/%.sh: audio/%.sh
+	@mkdir -p $(@D)
+	cp $< $@
+
+BUILT := $(PROGRAMS) ffmpeg ffprobe
+
+$(WWW)/bin/index.json: $(BUILT:%=$(WWW)/bin/%.wasm) $(WWW)/bin/launcher.sh $(WRAPPERS:%=$(WWW)/bin/%.sh)
+	node -e 'const [built, launchers, wrappers] = process.argv.slice(1).map((s) => s.split(" ")); console.log(JSON.stringify([...built.map((name) => ({ name, file: `bin/$${name}.wasm` })), ...launchers.map((name) => ({ name, file: "bin/launcher.sh" })), ...wrappers.map((name) => ({ name, file: `bin/$${name}.sh`, dir: "/usr/local/bin" }))], null, 2))' \
+		"$(BUILT)" "$(LAUNCHERS)" "$(WRAPPERS)" > $@
 
 # The roots the guest's TLS clients trust: Mozilla's, as the Node.js that serves the page bundles
 # them. The machine mounts them at /etc/ssl/certs/ca-certificates.crt.

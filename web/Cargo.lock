@@ -286,8 +286,10 @@ dependencies = [
 name = "clai-web"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "js-sys",
  "wasixv2",
+ "wasixv2-vfs",
  "wasixv2-vfs-package",
  "wasixv2-vnet-wisp",
  "wasm-bindgen",

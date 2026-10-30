@@ -5,12 +5,15 @@
 <style>
   html, body { height: 100%; margin: 0; background: #1e1e1e; }
   #terminal { height: 100%; padding: 8px; box-sizing: border-box; }
+  .share-audio { position: fixed; top: 12px; right: 12px; padding: 10px 14px; font: 14px sans-serif;
+    border: 0; border-radius: 6px; background: #3b82f6; color: white; cursor: pointer; }
 </style>
 <div id="terminal"></div>
 <script type="module">
   import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
   import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
   import { LineEditor, split } from "./shell.js";
+  import { AudioInputs } from "./audio.js";
 
   // No convertEol: clai's output comes through the machine's terminal, which turns "\n" into
   // "\r\n" itself unless the program asked for raw output.
@@ -26,12 +29,17 @@
   const size = () => ({ rows: term.rows, cols: term.cols });
   worker.postMessage({ size: size() });
   let finished = null;
+  const audio = new AudioInputs(
+    (name, bytes) => worker.postMessage({ samples: { name, bytes } }, [bytes.buffer]),
+    (text) => term.write(`\r\n\x1b[33m${text}\x1b[0m\r\n`),
+  );
   worker.onerror = (event) => term.writeln(`\x1b[31mworker failed: ${event.message}\x1b[0m`);
   const { bash, home } = await new Promise((ready) => {
     worker.onmessage = ({ data }) => {
       if (data.log) term.writeln(data.log);
       if (data.ready) ready(data);
       if (data.output) term.write(data.output);
+      if (data.audio) audio.want(data.audio);
       if (data.error) term.writeln(`\x1b[31m${data.error}\x1b[0m`);
       if ("status" in data) finished(data.status);
     };

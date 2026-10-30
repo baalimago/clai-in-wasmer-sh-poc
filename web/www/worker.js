@@ -18,7 +18,8 @@ const packageList = async () => {
   return response.ok ? response.json() : [];
 };
 
-// clai, then the programs `make` built for /bin: the MCP server ports, and npx and uvx.
+// clai, then the programs `make` built for /bin: the MCP server ports, and npx and uvx; and the
+// wrappers for /usr/local/bin, whose entries name that directory.
 const programList = async () => {
   const response = await fetch("./bin/index.json");
   return [{ name: "clai", file: "clai.wasm" }, ...(response.ok ? await response.json() : [])];
@@ -32,18 +33,40 @@ const [programBytes, packages] = await Promise.all([
   Promise.all(programs.map(({ file }) => fetchBytes(`./${file}`))),
   Promise.all(list.map(({ file }) => fetchBytes(`./packages/${file}`))),
 ]);
+const local = programs.map(({ dir }) => dir === "/usr/local/bin");
+const pick = (items, wantLocal) => items.filter((_, i) => local[i] === wantLocal);
 const names = programs.map(({ name }) => name);
-const shell = await boot(`ws://${location.host}/`, certificates, names, programBytes, packages, rows, cols);
+const shell = await boot(
+  `ws://${location.host}/`,
+  certificates,
+  pick(names, false),
+  pick(programBytes, false),
+  pick(names, true),
+  pick(programBytes, true),
+  packages,
+  rows,
+  cols,
+);
 for (const note of shell.notes()) post({ log: `\x1b[33m${note}\x1b[0m` });
 const home = shell.login_env().find((v) => v.startsWith("HOME="))?.slice("HOME=".length) ?? "/";
 post({ ready: true, bash: list.some(({ name }) => name === "wasmer/bash"), home });
 
-onmessage = async ({ data: { path, args, env, input, size } }) => {
+// The audio inputs whose /run/audio files are open, which the page captures and sends back.
+let wanted = "";
+const audio = () => {
+  const now = shell.audio_wanted();
+  if (now.join() !== wanted) post({ audio: now });
+  wanted = now.join();
+};
+
+onmessage = async ({ data: { path, args, env, input, size, samples } }) => {
+  if (samples) return shell.push_audio(samples.name, samples.bytes);
   if (input) return shell.type_input(input);
   if (size) return shell.resize(size.rows, size.cols);
   const drain = () => {
     const bytes = shell.take_output();
     if (bytes.length > 0) post({ output: bytes });
+    audio();
   };
   const timer = setInterval(drain, 30);
   let status;

@@ -37,7 +37,13 @@ export function startServer(port = Number(process.env.PORT ?? 5001)) {
     try {
       const body = await readFile(file);
       const type = TYPES[path.extname(file)] ?? "text/plain";
-      response.writeHead(200, { "content-type": type }).end(body);
+      // Cross-origin isolated, so guest memory can be a SharedArrayBuffer that a process's
+      // threads share (ffmpeg and rg start threads).
+      response.writeHead(200, {
+        "content-type": type,
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-embedder-policy": "require-corp",
+      }).end(body);
     } catch {
       response.writeHead(404).end();
     }
