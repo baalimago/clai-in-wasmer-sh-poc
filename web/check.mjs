@@ -267,11 +267,11 @@ try {
       .then(() => true, () => false);
     const meeting = await page.evaluate(() => ({
       title: document.querySelector("#meeting-title").textContent,
-      summary: document.querySelector("#summary").innerHTML,
+      item: document.querySelector("#summary ul > li")?.textContent,
       path: document.querySelector("#saved-path").textContent,
     }));
     console.log(`Minutes, a meeting: ${JSON.stringify(meeting)}`);
-    if (!opened || meeting.title !== "Design review" || !meeting.summary.includes("<li>Ship the peek</li>")) {
+    if (!opened || meeting.title !== "Design review" || meeting.item !== "Ship the peek") {
       console.error("\nFAIL: the notebook's meeting did not open as its rendered summary and transcript");
       process.exitCode = 1;
     }
