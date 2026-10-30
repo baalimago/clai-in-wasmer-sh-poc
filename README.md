@@ -207,7 +207,17 @@ with SIGINT. In the page:
 The page asks for the microphone when it loads, which is what lets the browser name its audio
 inputs, and adds each to `/run/audio`; `/run/audio/devices` lists them, a `name<TAB>label` line
 each. clai's `audio_sources` then sees them all, and its agent picks which to record: by default
-the default microphone and the default sink's monitor, mixed into one recording. The page captures an input only while ffmpeg has its file open, at 48 kHz on one `AudioContext`,
+the default microphone and the default sink's monitor, mixed into one recording. Chrome and Chromium leave monitor sources out of their inputs on Linux, by design. A remapped copy of
+the monitor, which is not one, is listed; named "Monitor of ...", it is a monitor here:
+
+```sh
+pactl load-module module-remap-source master="$(pactl get-default-sink).monitor" \
+  source_name=meeting_audio source_properties='device.description="Monitor of System Audio"'
+```
+
+The page adds it when it appears, with no reload. Firefox lists monitors as they are.
+
+The page captures an input only while ffmpeg has its file open, at 48 kHz on one `AudioContext`,
 so a mic and tab recording stay in step. `/usr/local/bin/ffmpeg` (`audio/ffmpeg.sh`) answers
 `-sources pulse` and `-sinks pulse` with those names and labels and turns `-f pulse -i NAME` into the raw
 file. On SIGINT it writes to the input files, which ends them, so ffmpeg reads to the end and

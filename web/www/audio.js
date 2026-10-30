@@ -160,6 +160,8 @@ export class AudioInputs {
         video: true,
         audio: { echoCancellation: false, noiseSuppression: false },
         preferCurrentTab: false,
+        // Sharing a whole screen can then carry what the computer plays, where the browser can.
+        systemAudio: "include",
       }));
     });
   }
