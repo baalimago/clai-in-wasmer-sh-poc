@@ -16,7 +16,9 @@ export const NOTEBOOK_FORMAT =
   "meetings/summaries/<start>_<slug>.md and meetings/transcripts/<start>_<slug>.md, " +
   "<start> in the form 2026-10-30T08-00Z. Begin each with front matter holding title, date " +
   "(ISO 8601) and duration (minutes). Record with audio_record's dir set to /tmp/recordings, " +
-  "so the audio stays out of the notebook.";
+  "so the audio stays out of the notebook. Name a speaker only when the recording makes clear who " +
+  "it is; otherwise keep the transcription's labels (Speaker A, Speaker B) and do not ask: the app " +
+  "asks the user who they are.";
 
 export const DEFAULTS = {
   profile: "cchub:baalimago/meeting-transcriber@13",
@@ -147,6 +149,23 @@ export function parseSpaces(text) {
   return { names: rows.map((m) => m[2]), current: rows.find((m) => m[1] === "*")?.[2] ?? null };
 }
 
+// The speakers a transcript names by a label rather than a name, each with a line they said.
+export function unknownSpeakers(transcript) {
+  const found = new Map();
+  const line = /^\s*(?:[-*]\s+)?\*{0,2}(Speaker [A-Z0-9]{1,2}|[Uu]nknown [Ss]peaker(?: \d+)?)\*{0,2}\s*(?:\[[^\]]*\])?\s*:\s*\*{0,2}\s*(.+)$/gm;
+  for (const [, label, said] of transcript.matchAll(line)) {
+    const known = found.get(label);
+    if (!known) found.set(label, said.trim());
+    else if (known.split(/\s+/).length < 4 && said.split(/\s+/).length >= 4) found.set(label, said.trim());
+  }
+  return [...found].map(([label, sample]) => ({ label, sample }));
+}
+
+// A note's body without its own leading "Summary" or "Transcript" heading, which the card has.
+export function withoutHeading(body, word) {
+  return body.replace(new RegExp(`^\\s*#{1,3} [^\\n]*\\b${word}\\s*\\n+`, "i"), "");
+}
+
 // A profile clai fetches from the hub or a repository, rather than a file on the machine.
 export const isRemote = (profile) => /^(cchub|gh):/.test(profile);
 
@@ -248,6 +267,11 @@ export class Minutes {
       this.record($("#title").value.trim() || "Meeting", $("#details").value.trim());
     };
     $("#stop").onclick = () => this.stop();
+    $("#speakers").onsubmit = (event) => {
+      event.preventDefault();
+      const names = [...$("#speaker-rows").querySelectorAll("input")].map((i) => [i.dataset.label, i.value.trim()]);
+      this.nameSpeakers(names);
+    };
     $("#space-form").onsubmit = (event) => {
       event.preventDefault();
       if ($("#space").value) this.chooseSpace($("#space").value);
@@ -462,7 +486,7 @@ export class Minutes {
 
   async showRecording(key) {
     const audio = this.$("#recording");
-    const blob = await this.recordings.get(key);
+    const blob = key === null ? null : await this.recordings.get(key);
     if (audio.src) URL.revokeObjectURL(audio.src);
     audio.hidden = !blob;
     if (blob) audio.src = URL.createObjectURL(blob);
@@ -486,7 +510,7 @@ export class Minutes {
     const flags = c.flags ? `${c.flags} ` : "";
     // slivingdoc's server then keeps the notebook the agent's file tools write in.
     const root = this.connected ? 'SLIVINGDOC_WORKSPACE_ROOT="$PWD" ' : "";
-    return `${this.cd()} && { echo reply; ${root}${env}clai -reply-only ${reply ? "-re " : ""}-profile-path ${c.profile} ` +
+    return `${this.cd()} && { echo reply; ${root}${env}clai -reply-only ${reply ? "-dre " : ""}-profile-path ${c.profile} ` +
       `${flags}query ${quote(query)}; } > /run/page/out`;
   }
 
@@ -497,10 +521,17 @@ export class Minutes {
     if (this.spaces) return this.status("Choose the slivingdoc space for your meetings first.");
     this.status("");
     if (this.needsTrust && !(await this.trust())) return;
+    // Nothing of the last meeting carries over: its notes, recording, history or the form's text.
     this.current = null;
+    this.historyItems = null;
     this.levels = [];
+    this.share = null;
+    this.$("#title").value = "";
+    this.$("#details").value = "";
+    this.renderWave();
     this.recording = { title, startedAt: new Date(), started: null, stages: new Set() };
     this.show("meeting");
+    await this.showRecording(null);
     const line = this.agentLine(this.config.query(title, details), false);
     const unwatch = this.watchStages("Record");
     const { status, body } = await this.run("Record", line, {
@@ -521,6 +552,22 @@ export class Minutes {
     await this.finish(status, body);
   }
 
+  // Names for the speakers the transcript only labels: the agent, in the same conversation,
+  // rewrites both notes with them.
+  async nameSpeakers(names) {
+    const c = this.current;
+    const given = names.filter(([, name]) => name);
+    if (!c || given.length === 0) return;
+    const text = `Rename the speakers in ${transcriptOf(c.path)} and ${c.path}: ` +
+      given.map(([label, name]) => `"${label}" is ${name}`).join("; ") +
+      ". Where one label covers several voices, tell them apart from what each line says. Keep everything else, " +
+      "including the front matter, and save both files to the notebook again.";
+    this.recording = { title: c.title, startedAt: new Date(), stages: new Set(), answering: true, done: false, path: c.path };
+    this.show("meeting");
+    const { status, body } = await this.run("Name the speakers", this.agentLine(text, true), { topic: "reply" });
+    await this.finish(status, body);
+  }
+
   // The agent is done: the notes it filed open, else what it said shows.
   async finish(status, body) {
     const r = this.recording;
@@ -534,7 +581,8 @@ export class Minutes {
     await this.refresh(true);
     const linked = summariesIn(r.reply);
     const filed = this.meetings.find((m) => linked.includes(m.path)) ??
-      this.meetings.find((m) => !before.has(m.path));
+      this.meetings.find((m) => !before.has(m.path)) ??
+      this.meetings.find((m) => m.path === r.path);
     if (filed) {
       await this.open(filed, true);
       if (r.audioPath) {
@@ -697,13 +745,35 @@ export class Minutes {
     const summary = $("#summary");
     const transcript = $("#transcript");
     if (c) {
-      summary.innerHTML = renderMarkdown(c.summary || "_The summary is empty._");
-      transcript.innerHTML = renderMarkdown(c.transcript || "_No transcript in the notebook for this meeting._");
+      summary.innerHTML = renderMarkdown(withoutHeading(c.summary, "summary") || "_The summary is empty._");
+      transcript.innerHTML = renderMarkdown(withoutHeading(c.transcript, "transcript") || "_No transcript in the notebook for this meeting._");
     } else {
       summary.innerHTML = renderMarkdown("_Written by the agent when you stop the recording._");
       transcript.innerHTML = renderMarkdown("_Transcribed with speaker labels when the recording stops._");
     }
     $("#saved").hidden = !c;
+    const busy = r && !r.done;
+    const unknown = c && !busy ? unknownSpeakers(c.transcript) : [];
+    const form = $("#speakers");
+    form.hidden = unknown.length === 0;
+    const key = unknown.map((u) => u.label).join("\n");
+    if (form.dataset.key !== key || form.dataset.path !== c?.path) {
+      form.dataset.key = key;
+      form.dataset.path = c?.path ?? "";
+      $("#speaker-rows").replaceChildren(...unknown.map(({ label, sample }) => {
+        const row = document.createElement("label");
+        row.className = "speaker";
+        const who = document.createElement("strong");
+        who.textContent = label;
+        const quote = document.createElement("q");
+        quote.textContent = sample.length > 90 ? `${sample.slice(0, 90)}…` : sample;
+        const input = document.createElement("input");
+        input.dataset.label = label;
+        input.placeholder = "Name, or names if several voices";
+        row.append(who, quote, input);
+        return row;
+      }));
+    }
     $("#saved-path").textContent = c?.path ?? "";
     const history = $("#history-list");
     history.hidden = !this.historyItems;

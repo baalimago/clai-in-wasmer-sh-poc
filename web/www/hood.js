@@ -283,14 +283,8 @@ export class HoodView {
 
   render() {
     const $ = (s) => this.root.querySelector(s);
-    if (this.action) {
-      $("#hood-label").textContent = this.label;
-      $("#hood-command").textContent = mask(this.command);
-      $("#hood-hint").textContent = this.hint;
-      $("#hood-hint").hidden = !this.hint;
-      $("#hood-last").hidden = false;
-      $("#hood-idle").hidden = true;
-    }
+    // What a click ran shows in the terminal; here, only what it did.
+    if (this.action) $("#hood-idle").hidden = true;
     this.renderTree($("#hood-tree"));
     this.renderLog($("#hood-log"));
     this.renderResources($("#hood-net"), "net");

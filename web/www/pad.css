@@ -115,6 +115,7 @@ body, .top { background: var(--pad-paper); }
 
 /* handwriting.js: words stay hidden until the pencil gets to them, and are pale for a moment. */
 .hw-word { white-space: nowrap; }
+.prose code .hw-word, .prose code.hw-word { white-space: normal; overflow-wrap: anywhere; }
 .hw-unwritten { visibility: hidden; }
 .hw-writing li:not(.hw-on)::marker { color: transparent; text-shadow: none; }
 .hw-writing :is(h1, h2, h3, h4):not(.hw-on) { text-decoration-color: transparent; }

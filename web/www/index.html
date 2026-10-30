@@ -114,6 +114,13 @@
 
         <ol id="stages" class="stages" hidden></ol>
 
+        <form id="speakers" class="card speakers" hidden>
+          <h2>Who is speaking?</h2>
+          <p class="quiet">The transcription tells voices apart but not who they are. Name them and the agent rewrites the transcript and the summary.</p>
+          <div id="speaker-rows" class="stack"></div>
+          <button class="primary">Name the speakers</button>
+        </form>
+
         <div id="agent" class="card" hidden>
           <h2>The agent says</h2>
           <p id="agent-text" class="prose"></p>
@@ -156,11 +163,6 @@
     </div>
     <div class="panels">
       <div class="panel active" data-panel="activity">
-        <div id="hood-last" class="last" hidden>
-          <div class="quiet">You clicked <strong id="hood-label"></strong>, which ran</div>
-          <code id="hood-command"></code>
-          <div id="hood-hint" class="quiet hint" hidden></div>
-        </div>
         <p id="hood-idle" class="quiet">Every button of Minutes runs a program on a WASIX v2 machine in this tab. Click one to see what it starts, opens and connects to.</p>
         <div class="activity-col">
           <h2>Processes</h2>

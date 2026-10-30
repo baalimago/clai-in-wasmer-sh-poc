@@ -8,7 +8,7 @@ import { notePath, renderMarkdown } from "./www/markdown.js";
 import { wrapWords } from "./www/doodles.js";
 import {
   accountOf, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
-  parseSpaces, profilePage, replyText, splitMessage, summariesIn,
+  parseSpaces, profilePage, replyText, splitMessage, summariesIn, unknownSpeakers, withoutHeading,
 } from "./www/minutes.js";
 
 const exec = (pid, ppid, path, argv, t = 1) => ({ t, type: "exec", pid, ppid, path, argv });
@@ -196,3 +196,27 @@ test("a scribbled log line past the last rule ends in an ellipsis", () => {
   const lines = wrapWords("a b c d e f g h", 3, 2);
   assert.deepEqual(lines, ["a b", "c …"]);
 });
+
+test("a transcript's speakers without a name, each with a line they said", () => {
+  const transcript = [
+    "# Transcript", "",
+    "**Speaker A:** Hi.",
+    "**Speaker A:** Let us ship the peek on Friday.",
+    "- Unknown speaker [00:12]: I can review it tomorrow morning.",
+    "**Ada:** Sounds good.",
+    "Speaker B: Fine.",
+  ].join("\n");
+  assert.deepEqual(unknownSpeakers(transcript), [
+    { label: "Speaker A", sample: "Let us ship the peek on Friday." },
+    { label: "Unknown speaker", sample: "I can review it tomorrow morning." },
+    { label: "Speaker B", sample: "Fine." },
+  ]);
+  assert.deepEqual(unknownSpeakers("**Ada:** Hi.\n**Grace:** Hello."), []);
+});
+
+test("a note's own Summary or Transcript heading goes, the card has one", () => {
+  assert.equal(withoutHeading("## Summary\n\n- Ship it", "summary"), "- Ship it");
+  assert.equal(withoutHeading("# Meeting transcript\nAda: hi", "transcript"), "Ada: hi");
+  assert.equal(withoutHeading("- Ship it\n## Summary", "summary"), "- Ship it\n## Summary");
+});
+

@@ -177,3 +177,7 @@ td:first-child { word-break: break-all; color: #fff; }
 .notebook .inline { align-self: flex-start; margin-top: 4px; }
 .space select { flex: 1 1 200px; min-height: 44px; padding: 0 10px; font: inherit; }
 .recording { width: 100%; max-width: 560px; }
+.speaker { display: grid; grid-template-columns: minmax(8em, auto) minmax(0, 1fr); gap: 2px 12px; align-items: baseline; }
+.speaker q { color: var(--quiet); overflow-wrap: anywhere; }
+.speaker input { grid-column: 1 / -1; }
+.prose code { overflow-wrap: anywhere; white-space: normal; }
