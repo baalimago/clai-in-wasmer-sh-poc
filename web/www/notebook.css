@@ -1,0 +1,166 @@
+/* Four takes on B as a notebook the agent writes in by hand (?look=b1..b4). Each builds on B's
+   rules in looks.css, which match every look whose name starts with "b". */
+
+@font-face { font-family: Caveat; font-weight: 400; font-display: swap; src: url("./node_modules/@fontsource/caveat/files/caveat-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: Caveat; font-weight: 700; font-display: swap; src: url("./node_modules/@fontsource/caveat/files/caveat-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: Kalam; font-weight: 300; font-display: swap; src: url("./node_modules/@fontsource/kalam/files/kalam-latin-300-normal.woff2") format("woff2"); }
+@font-face { font-family: Kalam; font-weight: 400; font-display: swap; src: url("./node_modules/@fontsource/kalam/files/kalam-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: Kalam; font-weight: 700; font-display: swap; src: url("./node_modules/@fontsource/kalam/files/kalam-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Patrick Hand"; font-display: swap; src: url("./node_modules/@fontsource/patrick-hand/files/patrick-hand-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Architects Daughter"; font-display: swap; src: url("./node_modules/@fontsource/architects-daughter/files/architects-daughter-latin-400-normal.woff2") format("woff2"); }
+
+/* Shared: the notes appear as if written, line by line, when a meeting opens. */
+@keyframes write { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 -2% 0 0); } }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .summary .prose > * { animation: write .7s steps(24, end) both; }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .summary .prose > :nth-child(2) { animation-delay: .35s; }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .summary .prose > :nth-child(3) { animation-delay: .7s; }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .summary .prose > :nth-child(4) { animation-delay: 1.05s; }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .summary .prose > :nth-child(n+5) { animation-delay: 1.4s; }
+@media (prefers-reduced-motion: reduce) { html .summary .prose > * { animation: none !important; } }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .content h1 { transform: rotate(-.6deg); transform-origin: left; }
+
+/* B1 · Fountain pen: a ruled exercise book with a red margin, written in blue-black ink. */
+html[data-look=b1] { --ed-ink: #1b2a52; --ed-paper: #fdfbf5; --ed-rule: #c9d6ea; --ed-accent: #c2372b; --hand: Kalam, "Comic Sans MS", cursive; --rule: 30px; }
+html[data-look=b1] .brand strong { font: 700 30px/1 Caveat, cursive; color: var(--ed-ink); }
+html[data-look=b1] .tagline { font: 20px Caveat, cursive; }
+html[data-look=b1] .content {
+  position: relative; padding: 36px 56px 40px 96px; line-height: var(--rule);
+  background:
+    linear-gradient(90deg, transparent 70px, rgba(194, 55, 43, .55) 70px, rgba(194, 55, 43, .55) 71px, transparent 71px, transparent 74px, rgba(194, 55, 43, .35) 74px, rgba(194, 55, 43, .35) 75px, transparent 75px),
+    repeating-linear-gradient(transparent 0 calc(var(--rule) - 1px), var(--ed-rule) calc(var(--rule) - 1px) var(--rule)) 0 8px / 100% var(--rule),
+    var(--ed-paper);
+  background-attachment: local;
+}
+html[data-look=b1] .content h1 { font: 700 54px/1 Caveat, cursive; color: var(--ed-ink); }
+html[data-look=b1] .meeting-head .quiet { font: 18px Caveat, cursive; color: #5a6684; }
+html[data-look=b1] .card { border-top: 0; background: none; }
+html[data-look=b1] .card > h2 { font: 700 28px/1 Caveat, cursive; color: var(--ed-accent); border-bottom: 0; text-decoration: underline wavy rgba(194, 55, 43, .5) 1.5px; text-underline-offset: 6px; }
+html[data-look=b1] .prose { font: 18px/var(--rule) var(--hand); color: var(--ed-ink); }
+html[data-look=b1] .prose h1, html[data-look=b1] .prose h2, html[data-look=b1] .prose h3 { font: 700 24px/var(--rule) Caveat, cursive; margin: var(--rule) 0 0; color: var(--ed-ink); }
+html[data-look=b1] .prose p, html[data-look=b1] .prose ul { margin: 0 0 var(--rule); }
+html[data-look=b1] .prose strong { background: linear-gradient(transparent 55%, rgba(255, 214, 64, .6) 55% 90%, transparent 90%); }
+html[data-look=b1] .transcript .prose { font-weight: 300; color: #39456a; }
+html[data-look=b1] .sidebar { background: #f3efe3; border-right: 2px solid #e2dac6; box-shadow: inset -8px 0 14px -10px rgba(0, 0, 0, .18); }
+html[data-look=b1] .meeting strong { font: 700 22px/1.1 Caveat, cursive; color: var(--ed-ink); }
+html[data-look=b1] .meeting[aria-current=true] strong { color: var(--ed-accent); }
+html[data-look=b1] .sidehead { font: 700 20px Caveat, cursive; }
+html[data-look=b1] .primary, html[data-look=b1] .dark { border-radius: 4px 9px 5px 8px / 8px 4px 9px 5px; font-family: var(--hand); }
+html[data-look=b1] .recbar { border-left-color: var(--ed-ink); }
+html[data-look=b1] .rec-state { font: 700 26px Caveat, cursive; }
+html[data-look=b1] .wave span { background: var(--ed-ink); border-radius: 2px; flex-basis: 2px; opacity: .85; }
+html[data-look=b1] .stages { font: 20px Caveat, cursive; }
+
+/* B2 · Bullet journal: a dotted grid, black fineliner, highlighter and washi tape. */
+html[data-look=b2] { --ed-ink: #222; --ed-paper: #fffefa; --ed-rule: #d8d4ca; --ed-accent: #e2537a; --hand: "Patrick Hand", "Comic Sans MS", cursive; }
+html[data-look=b2] body, html[data-look=b2] .app { background: radial-gradient(circle, #cfc9bc 1px, transparent 1.3px) 0 0 / 22px 22px, var(--ed-paper); }
+html[data-look=b2] .top { background: var(--ed-paper); border-bottom: 2px dashed #222; }
+html[data-look=b2] .brand strong { font: 30px/1 var(--hand); color: #222; }
+html[data-look=b2] .tagline { font: 17px var(--hand); }
+html[data-look=b2] .content { background: none; font-family: var(--hand); font-size: 16px; }
+html[data-look=b2] .content h1 { display: inline-block; align-self: flex-start; font: 52px/1.1 var(--hand); padding: 0 10px; background: linear-gradient(100deg, transparent 2%, rgba(255, 233, 87, .8) 4% 95%, transparent 97%) 0 62% / 100% 52% no-repeat; }
+html[data-look=b2] .card { position: relative; border: 2px solid #222; border-radius: 3px; background: rgba(255, 254, 250, .9); padding: 30px 26px 22px; box-shadow: 3px 4px 0 rgba(0, 0, 0, .08); }
+html[data-look=b2] .card::before { content: ""; position: absolute; top: -12px; left: 28px; width: 110px; height: 24px; background: repeating-linear-gradient(45deg, rgba(126, 200, 190, .75) 0 8px, rgba(162, 220, 210, .75) 8px 16px); transform: rotate(-3deg); }
+html[data-look=b2] .transcript::before { left: auto; right: 28px; transform: rotate(2.5deg); background: repeating-linear-gradient(45deg, rgba(240, 160, 180, .75) 0 8px, rgba(250, 190, 205, .75) 8px 16px); }
+html[data-look=b2] .card > h2 { font: 28px var(--hand); color: #222; border-bottom: 0; }
+html[data-look=b2] .prose { font: 19px/1.55 var(--hand); }
+html[data-look=b2] .prose h1, html[data-look=b2] .prose h2, html[data-look=b2] .prose h3 { font: 23px var(--hand); text-decoration: underline 2px var(--ed-accent); text-underline-offset: 4px; }
+html[data-look=b2] .prose ul { list-style: none; padding-left: 4px; }
+html[data-look=b2] .prose li::before { content: "•"; display: inline-block; width: 18px; font-weight: 700; }
+html[data-look=b2] .prose strong { font-weight: 400; background: linear-gradient(transparent 50%, rgba(255, 233, 87, .8) 50% 92%, transparent 92%); }
+html[data-look=b2] .sidebar { background: none; border-right: 2px dashed #222; font-family: var(--hand); }
+html[data-look=b2] .sidehead { font: 20px var(--hand); color: var(--ed-accent); border-bottom: 0; }
+html[data-look=b2] .meeting { border-bottom: 1px dashed #c8c2b5; }
+html[data-look=b2] .meeting strong { font: 21px/1.2 var(--hand); }
+html[data-look=b2] .meeting[aria-current=true] strong { color: #222; background: linear-gradient(transparent 50%, rgba(126, 200, 190, .7) 50% 92%, transparent 92%); }
+html[data-look=b2] .primary, html[data-look=b2] .secondary, html[data-look=b2] .dark { border: 2px solid #222; border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; font: 18px var(--hand); box-shadow: 2px 3px 0 #222; }
+html[data-look=b2] .primary { background: #fffefa; color: #222; }
+html[data-look=b2] .new, html[data-look=b2] .dark { background: var(--ed-accent); color: #fff; }
+html[data-look=b2] .recbar { border: 2px solid #222; border-left: 2px solid #222; padding: 26px 20px 16px; }
+html[data-look=b2] .rec-state { font: 26px var(--hand); }
+html[data-look=b2] .wave span { background: var(--ed-accent); border-radius: 3px; flex-basis: 3px; }
+html[data-look=b2] .stages { font: 18px var(--hand); }
+html[data-look=b2] .chip { border: 1.5px solid #222; border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; font-family: var(--hand); font-size: 14px; }
+
+/* B3 · Index cards: the notes are cards pinned to a desk, each lined, taped and a little crooked. */
+html[data-look=b3] { --ed-ink: #263238; --ed-paper: #efe9df; --ed-rule: #b9cde3; --ed-accent: #d64545; --hand: "Architects Daughter", "Comic Sans MS", cursive; }
+html[data-look=b3] body, html[data-look=b3] .app, html[data-look=b3] .top { background: #ece5d9; }
+html[data-look=b3] .top { border-bottom: 1px solid #d4cab9; }
+html[data-look=b3] .brand strong { font: 26px/1 var(--hand); }
+html[data-look=b3] .tagline { font: 15px var(--hand); }
+html[data-look=b3] .content { font-family: var(--hand); }
+html[data-look=b3] .content h1 { font: 44px/1.1 var(--hand); }
+html[data-look=b3] .card {
+  position: relative; border: 0; border-radius: 2px; padding: 22px 24px 24px;
+  background: repeating-linear-gradient(transparent 0 27px, var(--ed-rule) 27px 28px) 0 52px / 100% 28px no-repeat, #fff;
+  background-size: 100% calc(100% - 52px);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .08), 0 8px 18px rgba(80, 60, 30, .14);
+}
+html[data-look=b3] .card::after { content: ""; position: absolute; top: -10px; left: 50%; width: 90px; height: 22px; margin-left: -45px; background: rgba(255, 255, 255, .55); border: 1px solid rgba(0, 0, 0, .05); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); transform: rotate(-2deg); }
+html[data-look=b3] .summary { transform: rotate(-.7deg); }
+html[data-look=b3] .transcript { transform: rotate(.5deg); }
+html[data-look=b3] .card > h2 { font: 24px var(--hand); color: var(--ed-ink); border-bottom: 2px solid var(--ed-accent); padding-bottom: 10px; margin: 0 -24px 6px; padding-left: 24px; }
+html[data-look=b3] .prose { font: 15.5px/28px var(--hand); color: var(--ed-ink); }
+html[data-look=b3] .prose h1, html[data-look=b3] .prose h2, html[data-look=b3] .prose h3 { font: 18px/28px var(--hand); margin: 0; color: var(--ed-accent); }
+html[data-look=b3] .prose p, html[data-look=b3] .prose ul { margin: 0 0 28px; }
+html[data-look=b3] .prose ul { list-style: "– "; }
+html[data-look=b3] .prose strong { font-weight: 400; border-bottom: 2px solid var(--ed-accent); }
+html[data-look=b3] .sidebar { background: none; border-right: 0; font-family: var(--hand); gap: 10px; }
+html[data-look=b3] .sidehead { font: 17px var(--hand); color: #6d6457; border-bottom: 0; }
+html[data-look=b3] .meeting { background: #fff; border: 0; border-top: 3px solid var(--ed-rule); border-radius: 2px; padding: 10px 14px; box-shadow: 0 4px 10px rgba(80, 60, 30, .12); }
+html[data-look=b3] .meeting:nth-child(odd) { transform: rotate(-.8deg); }
+html[data-look=b3] .meeting:nth-child(even) { transform: rotate(.6deg); }
+html[data-look=b3] .meeting:hover { background: #fff; }
+html[data-look=b3] .meeting[aria-current=true] { background: #fff9c9; border-top-color: var(--ed-accent); }
+html[data-look=b3] .meeting strong { font: 17px var(--hand); }
+html[data-look=b3] .meeting[aria-current=true] strong { color: var(--ed-ink); }
+html[data-look=b3] .primary, html[data-look=b3] .dark, html[data-look=b3] .secondary { border-radius: 3px; font-family: var(--hand); }
+html[data-look=b3] .new { background: var(--ed-accent); transform: rotate(-1deg); box-shadow: 0 6px 14px rgba(214, 69, 69, .3); }
+html[data-look=b3] .recbar { border: 0; background: #fff9c9; padding: 18px 22px; box-shadow: 0 8px 18px rgba(80, 60, 30, .14); transform: rotate(-.4deg); }
+html[data-look=b3] .recbar::after { display: none; }
+html[data-look=b3] .rec-state { font: 22px var(--hand); }
+html[data-look=b3] .wave span { background: var(--ed-ink); border-radius: 1px; flex-basis: 2px; }
+html[data-look=b3] .stages { font: 16px var(--hand); }
+
+/* B4 · Legal pad: yellow ruled sheets under a binding, written in pencil, struck and circled. */
+html[data-look=b4] { --ed-ink: #3b3b3b; --ed-paper: #fff6b8; --ed-rule: #9ec3e6; --ed-accent: #c0392b; --hand: Caveat, "Comic Sans MS", cursive; --rule: 28px; }
+html[data-look=b4] body, html[data-look=b4] .top { background: #f7f3ea; }
+html[data-look=b4] .top { border-bottom: 1px solid #e3dcc9; }
+html[data-look=b4] .brand strong { font: 700 32px/1 var(--hand); color: var(--ed-ink); }
+html[data-look=b4] .tagline { font: 20px var(--hand); }
+html[data-look=b4] .app { background: #e9e3d4; }
+html[data-look=b4] .sidebar { background: #f7f3ea; border-right: 1px solid #ddd5c1; font-family: var(--hand); }
+html[data-look=b4] .sidehead { font: 700 20px var(--hand); color: #8a7f68; border-bottom: 1px solid #ddd5c1; }
+html[data-look=b4] .meeting strong { font: 700 23px/1.1 var(--hand); color: var(--ed-ink); }
+html[data-look=b4] .meeting[aria-current=true] strong { color: var(--ed-ink); outline: 2px solid var(--ed-accent); outline-offset: 3px; border-radius: 50% 45% 55% 40% / 60% 50% 55% 45%; padding: 0 6px; align-self: flex-start; }
+html[data-look=b4] .content {
+  margin: 18px 22px 0; padding: 54px 48px 40px 92px; line-height: var(--rule);
+  border-radius: 4px 4px 0 0; box-shadow: 0 10px 30px rgba(60, 50, 20, .18);
+  background:
+    linear-gradient(#5a4632 0 30px, transparent 30px) 0 0 / 100% 100% no-repeat,
+    radial-gradient(circle at 50% 30px, #e9e3d4 0 7px, transparent 7.5px) 30px 0 / 44px 44px repeat-x,
+    linear-gradient(90deg, transparent 72px, rgba(192, 57, 43, .6) 72px 73px, transparent 73px),
+    repeating-linear-gradient(transparent 0 calc(var(--rule) - 1px), var(--ed-rule) calc(var(--rule) - 1px) var(--rule)) 0 82px / 100% var(--rule),
+    var(--ed-paper);
+  background-attachment: local;
+}
+html[data-look=b4] .content h1 { font: 700 56px/1 var(--hand); color: #2b2b2b; }
+html[data-look=b4] .meeting-head .quiet { font: 20px var(--hand); color: #6b6658; }
+html[data-look=b4] .card { border-top: 0; background: none; }
+html[data-look=b4] .card > h2 { font: 700 30px/1 var(--hand); color: var(--ed-ink); border-bottom: 0; display: inline-block; padding: 2px 10px; border: 2px solid rgba(192, 57, 43, .75); border-radius: 48% 52% 45% 55% / 60% 55% 45% 40%; }
+html[data-look=b4] .prose { font: 23px/var(--rule) var(--hand); color: #404040; }
+html[data-look=b4] .prose h1, html[data-look=b4] .prose h2, html[data-look=b4] .prose h3 { font: 700 26px/var(--rule) var(--hand); margin: var(--rule) 0 0; text-decoration: underline 2px; text-underline-offset: 5px; }
+html[data-look=b4] .prose p, html[data-look=b4] .prose ul { margin: 0 0 var(--rule); }
+html[data-look=b4] .prose ul { list-style: "→ "; }
+html[data-look=b4] .prose strong { color: var(--ed-accent); }
+html[data-look=b4] .transcript .prose { color: #5b5b5b; font-size: 21px; }
+html[data-look=b4] .primary, html[data-look=b4] .dark, html[data-look=b4] .secondary { font: 700 20px var(--hand); border-radius: 2px; }
+html[data-look=b4] .new, html[data-look=b4] .dark { background: var(--ed-accent); }
+html[data-look=b4] .recbar { border-left: 0; padding: 0; }
+html[data-look=b4] .rec-state { font: 700 28px var(--hand); }
+html[data-look=b4] .wave span { background: #555; border-radius: 1px; flex-basis: 1.5px; opacity: .8; }
+html[data-look=b4] .stages { font: 22px var(--hand); }
+html[data-look=b4] input, html[data-look=b4] textarea { font: 22px var(--hand); }
+html[data-look=b1] .meeting span, html[data-look=b1] #saved { font: 17px Caveat, cursive; color: #5a6684; }
+html[data-look=b4] .meeting span, html[data-look=b4] #saved { font: 19px var(--hand); color: #6b6658; }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .stages li { margin-right: 24px; }
+html:is([data-look=b1], [data-look=b2], [data-look=b3], [data-look=b4]) .stages li::marker { color: var(--ed-accent); }

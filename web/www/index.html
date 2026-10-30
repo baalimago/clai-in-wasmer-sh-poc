@@ -5,10 +5,11 @@
 <link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="./style.css">
 <link rel="stylesheet" href="./looks.css">
+<link rel="stylesheet" href="./notebook.css">
 <script>
-  // The app's look, one of four to compare: ?look=a..d, else the last one picked.
+  // The app's look, to compare: ?look=a..d or b1..b4, else the last one picked.
   (() => {
-    const looks = ["a", "b", "c", "d"];
+    const looks = ["a", "b", "c", "d", "b1", "b2", "b3", "b4"];
     let look = new URLSearchParams(location.search).get("look");
     try {
       look = looks.includes(look) ? look : localStorage.getItem("minutes.look");
@@ -28,6 +29,10 @@
     <button data-look="b" title="Editorial">B</button>
     <button data-look="c" title="Bento">C</button>
     <button data-look="d" title="Studio">D</button>
+    <button data-look="b1" title="Fountain pen">B1</button>
+    <button data-look="b2" title="Bullet journal">B2</button>
+    <button data-look="b3" title="Index cards">B3</button>
+    <button data-look="b4" title="Legal pad">B4</button>
   </div>
   <div class="chips">
     <span class="chip" id="machine-chip">wasmer.sh · WASIX v2 kernel: booting</span>
