@@ -137,6 +137,16 @@ const browser = await chromium.launch({
 try {
   const context = await browser.newContext({ permissions: ["microphone"] });
   const page = await context.newPage();
+  // Minutes runs its agent with the test models and the meeting-transcriber profile the AUDIO
+  // rows write, as they do.
+  await page.addInitScript(() => {
+    window.minutesConfig = {
+      profile: "/tmp/meeting.json",
+      flags: "-cm mock_test",
+      env: "CLAI_MOCK_AUDIO_TRANSCRIBE_FILE=/tmp/mic.wav",
+      query: () => "tool_audio_sources tool_audio_record tool_audio_transcribe",
+    };
+  });
   page.on("pageerror", (error) => console.error("page error:", error.message));
   await page.goto(`http://localhost:${server.address().port}/`);
   await page.waitForSelector("body[data-ready]", { timeout: 120_000 });
@@ -158,6 +168,24 @@ try {
     console.log(printed.trimEnd());
     if (status !== 0 || !printed.includes(prints)) {
       console.error(`\nFAIL: ${line} exited with ${status} or did not print ${prints}`);
+      process.exitCode = 1;
+    }
+  }
+  // The kernel's events reach the page: the line's bash, tagged as the terminal's, and the file
+  // it writes.
+  if (bash) {
+    await page.evaluate((line) => window.runCommand(line), "echo hood > /tmp/hood.txt");
+    const seen = await page
+      .waitForFunction(() => {
+        const procs = [...window.hoodModel.procs.values()];
+        const shell = procs.find((p) => p.name === "bash" && p.argv[2]?.includes("/tmp/hood.txt"));
+        const wrote = window.hoodModel.resources.get("file:/tmp/hood.txt");
+        return shell?.action === "terminal" && wrote?.procs.has("bash") && wrote.out === 5;
+      }, null, { timeout: 10_000 })
+      .then(() => true, () => false);
+    console.log(`under the hood: ${seen ? "saw" : "missed"} bash write /tmp/hood.txt`);
+    if (!seen) {
+      console.error("\nFAIL: the under-the-hood model did not see bash, tagged terminal, write 5 bytes to /tmp/hood.txt");
       process.exitCode = 1;
     }
   }
@@ -186,6 +214,48 @@ try {
       process.exitCode = 1;
     }
   }
+  // Minutes' Record: the agent starts ffmpeg through its audio_record tool, the page shows Stop,
+  // which ends the recording as Enter does, and the agent's reply comes back to the app.
+  if (bash) {
+    await page.evaluate(() => window.minutes.env.set("OPENAI_API_KEY", "sk-test-not-a-key"));
+    await page.fill("#title", "Daily sync");
+    await page.click("#record-form button");
+    const stop = await page
+      .waitForSelector("#stop:not([hidden])", { timeout: 60_000 })
+      .then(() => true, () => false);
+    if (stop) {
+      await page.waitForTimeout(2000);
+      await page.click("#stop");
+    }
+    const replied = await page
+      .waitForSelector("#agent-reply:not([hidden])", { timeout: 60_000 })
+      .then(() => true, () => false);
+    const result = await page.evaluate(() => {
+      const r = window.minutes.recording;
+      const action = [...window.hoodModel.procs.values()].find((p) => p.action.startsWith("minutes:Record"))?.action;
+      // ffmpeg's wrapper in /usr/local/bin runs ffmpeg itself.
+      const ancestors = [];
+      for (let p = window.hoodModel.find(action, "ffmpeg").at(-1); p; p = window.hoodModel.procs.get(p.ppid)) {
+        ancestors.push(p.name);
+      }
+      return {
+        status: r.status,
+        reply: r.reply,
+        stages: [...r.stages],
+        ffmpegUnder: ancestors.find((name) => name !== "ffmpeg" && name !== "bash"),
+        timer: document.querySelector("#rec-timer").textContent,
+        command: window.hoodModel.tree(action).map((n) => n.proc.argv[2]).join(" "),
+      };
+    });
+    console.log(`Minutes, Record: ${JSON.stringify(result)}`);
+    if (!stop || !replied || result.status !== 0 || !result.stages.includes("recorded") ||
+      result.ffmpegUnder !== "clai" || !result.command.includes("clai -reply-only -profile-path /tmp/meeting.json")) {
+      console.error("\nFAIL: Minutes' Record did not show Stop, run ffmpeg under clai, or bring the agent's reply back");
+      process.exitCode = 1;
+    }
+  }
+  // The keyboard goes to the terminal, in its tab.
+  await page.evaluate(() => window.showTab("terminal"));
   for (const { name, keys, status: want } of INTERACTIVE) {
     const before = await page.evaluate(() => window.terminalText());
     await page.evaluate(() => {
@@ -195,7 +265,11 @@ try {
       (length) => window.terminalText().slice(length).includes("[q]uit"),
       before.length,
       { timeout: 60_000 },
-    );
+    ).catch(async (error) => {
+      const text = await page.evaluate(() => window.terminalText());
+      console.error(`the terminal, which never showed the menu:\n${JSON.stringify(text.slice(-1500))}`);
+      throw error;
+    });
     for (const key of keys) await page.keyboard.press(key);
     const status = await page.evaluate(() => window.running);
     const printed = (await page.evaluate(() => window.terminalText())).slice(before.length);

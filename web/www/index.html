@@ -1,149 +1,125 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>clai on WASIX v2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minutes on WASIX v2</title>
 <link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
-<style>
-  html, body { height: 100%; margin: 0; background: #1e1e1e; }
-  #terminal { height: 100%; padding: 8px; box-sizing: border-box; }
-  .share-audio { position: fixed; top: 12px; right: 12px; padding: 10px 14px; font: 14px sans-serif;
-    border: 0; border-radius: 6px; background: #3b82f6; color: white; cursor: pointer; }
-  .players { position: fixed; bottom: 12px; right: 12px; display: flex; flex-direction: column; gap: 6px; }
-  .player { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 6px; background: #333; }
-  .player button { border: 0; background: none; color: #ccc; font: 16px sans-serif; cursor: pointer; }
-</style>
-<div id="terminal"></div>
+<link rel="stylesheet" href="./style.css">
+<header class="top">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    <strong>Minutes</strong>
+    <span class="tagline">meeting notes, recorded and written in your browser</span>
+  </div>
+  <div class="chips">
+    <span class="chip" id="machine-chip">wasmer · WASIX v2: booting</span>
+    <span class="chip" id="notebook-chip">slivingdoc: not connected</span>
+    <span class="chip" id="key-chip">OpenAI key: not set</span>
+  </div>
+</header>
+<main class="split">
+  <section class="app" id="app" aria-label="Minutes">
+    <nav class="sidebar" aria-label="Meetings">
+      <button id="new" class="primary">New recording</button>
+      <div class="sidehead">
+        <span>Meetings</span>
+        <button id="refresh" class="link">Refresh</button>
+      </div>
+      <ul id="meetings" class="meetings"></ul>
+      <p id="empty" class="quiet">No meetings in the notebook yet.</p>
+      <button id="connect" class="secondary">Connect notebook</button>
+    </nav>
+    <div class="content">
+      <form id="key-form" class="card">
+        <label for="key-input"><strong>OpenAI API key</strong></label>
+        <p class="quiet">The agent transcribes with speaker labels and writes the summary with it. It stays in this tab, as <code>OPENAI_API_KEY</code> for every run.</p>
+        <div class="row">
+          <input id="key-input" type="password" autocomplete="off" placeholder="sk-…">
+          <button class="primary">Use key</button>
+        </div>
+      </form>
+      <p id="status" class="status" role="status"></p>
+
+      <section data-view="record" class="card">
+        <h1>New recording</h1>
+        <form id="record-form" class="stack">
+          <label for="title">Meeting name</label>
+          <input id="title" placeholder="Daily sync">
+          <label for="details">Who is there, and anything else the agent should know</label>
+          <textarea id="details" rows="3" placeholder="Remote call with Ada and Grace"></textarea>
+          <button class="primary">Record</button>
+          <p class="quiet">The agent picks the audio: your microphone, and a shared tab's audio for a call. It asks for the tab when it needs it.</p>
+        </form>
+      </section>
+
+      <section data-view="recording" class="card" hidden>
+        <h1 id="rec-title">Meeting</h1>
+        <div class="recbar">
+          <span id="rec-timer">Starting the agent…</span>
+          <div class="level" aria-hidden="true"><div id="level"></div></div>
+          <button id="stop" class="dark" hidden>Stop recording</button>
+        </div>
+        <ol id="stages" class="stages"></ol>
+        <div id="agent-reply" hidden>
+          <h2>The agent says</h2>
+          <pre id="agent-text" class="reply"></pre>
+          <form id="reply-form" class="row">
+            <label for="reply" class="sr-only">Answer the agent</label>
+            <input id="reply" placeholder="Answer the agent, such as who Speaker A is">
+            <button class="secondary">Send</button>
+          </form>
+        </div>
+      </section>
+
+      <section data-view="meeting" class="card" hidden>
+        <h1 id="meeting-title"></h1>
+        <p id="meeting-meta" class="quiet"></p>
+        <pre id="meeting-body" class="reply"></pre>
+        <p class="quiet">In the notebook as <code id="meeting-path"></code></p>
+      </section>
+    </div>
+  </section>
+
+  <section class="hood" id="hood" aria-label="Under the hood">
+    <div class="hoodhead">
+      <strong>Under the hood</strong>
+      <div role="tablist">
+        <button role="tab" data-tab="activity" aria-selected="true">Activity</button>
+        <button role="tab" data-tab="io" aria-selected="false">Network and files</button>
+        <button role="tab" data-tab="terminal" aria-selected="false">Terminal</button>
+      </div>
+    </div>
+    <div class="panels">
+      <div class="panel active" data-panel="activity">
+        <div id="hood-last" class="last" hidden>
+          <div class="quiet">You clicked <strong id="hood-label"></strong>, which ran</div>
+          <code id="hood-command"></code>
+        </div>
+        <h2>Processes</h2>
+        <ul id="hood-tree" class="tree"></ul>
+        <div class="loghead">
+          <h2>Events</h2>
+          <div class="filters">
+            <button data-kind="exec" aria-pressed="true" class="tag exec">exec</button>
+            <button data-kind="exit" aria-pressed="true" class="tag exit">exit</button>
+            <button data-kind="net" aria-pressed="true" class="tag net">net</button>
+            <button data-kind="fs" aria-pressed="true" class="tag fs">fs</button>
+            <button data-kind="audio" aria-pressed="true" class="tag audio">audio</button>
+          </div>
+        </div>
+        <ul id="hood-log" class="log"></ul>
+        <p id="hood-dropped" class="quiet" hidden></p>
+      </div>
+      <div class="panel" data-panel="io">
+        <h2>Connections</h2>
+        <table id="hood-net"><thead><tr><th>Host</th><th>Processes</th><th>Sent</th><th>Received</th></tr></thead><tbody></tbody></table>
+        <h2>Files written</h2>
+        <table id="hood-files"><thead><tr><th>Path</th><th>Processes</th><th>Written</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel" data-panel="terminal">
+        <div id="terminal"></div>
+      </div>
+    </div>
+  </section>
+</main>
 <div class="players"></div>
-<script type="module">
-  import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
-  import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
-  import { LineEditor, split } from "./shell.js";
-  import { AudioInputs } from "./audio.js";
-
-  // No convertEol: clai's output comes through the machine's terminal, which turns "\n" into
-  // "\r\n" itself unless the program asked for raw output.
-  const term = new Terminal({ cursorBlink: true, fontSize: 14 });
-  const fit = new FitAddon();
-  term.loadAddon(fit);
-  term.open(document.querySelector("#terminal"));
-  fit.fit();
-  addEventListener("resize", () => fit.fit());
-
-  term.writeln("Booting a WASIX v2 machine…");
-  const worker = new Worker("./worker.js", { type: "module" });
-  const size = () => ({ rows: term.rows, cols: term.cols });
-  worker.postMessage({ size: size() });
-  let finished = null;
-  const audio = new AudioInputs(
-    (name, bytes) => worker.postMessage({ samples: { name, bytes } }, [bytes.buffer]),
-    (text) => term.write(`\r\n\x1b[33m${text}\x1b[0m\r\n`),
-  );
-  // What `play` (audio/play.sh) wrote to /run/audio/play, in a player until it is closed.
-  const play = (bytes) => {
-    const url = URL.createObjectURL(new Blob([bytes]));
-    const player = document.createElement("div");
-    player.className = "player";
-    const element = new Audio(url);
-    element.controls = true;
-    const close = document.createElement("button");
-    close.textContent = "✕";
-    close.title = "Close";
-    close.onclick = () => {
-      element.pause();
-      URL.revokeObjectURL(url);
-      player.remove();
-    };
-    player.append(element, close);
-    document.querySelector(".players").append(player);
-    element.play().catch(() => {});
-  };
-  worker.onerror = (event) => term.writeln(`\x1b[31mworker failed: ${event.message}\x1b[0m`);
-  const { bash, home } = await new Promise((ready) => {
-    worker.onmessage = ({ data }) => {
-      if (data.log) term.writeln(data.log);
-      if (data.ready) ready(data);
-      if (data.output) term.write(data.output);
-      if (data.audio) audio.want(data.audio);
-      if (data.play) play(data.play);
-      if (data.error) term.writeln(`\x1b[31m${data.error}\x1b[0m`);
-      if ("status" in data) finished(data.status);
-    };
-  });
-  term.writeln(bash
-    ? "Ready. Try \x1b[1mls /bin\x1b[0m, \x1b[1mclai h\x1b[0m, or \x1b[1mhelp\x1b[0m.\r\n"
-    : "Ready, without bash: run \x1b[1mmake packages\x1b[0m for it. Try \x1b[1mclai h\x1b[0m.\r\n");
-  term.onResize(() => worker.postMessage({ size: size() }));
-
-  // Runs `args` from `path`, resolving to its exit status and streaming what it prints.
-  const env = new Map();
-  const exec = (path, args) => new Promise((resolve) => {
-    finished = (status) => {
-      // As bash does, the prompt goes on a new line after ^C killed the program.
-      if (status === 128 + 2) term.write("\r\n");
-      resolve(status);
-    };
-    worker.postMessage({ path, args, env: [...env].map(([key, value]) => `${key}=${value}`) });
-  });
-
-  // Each line is a new `bash -c` in the page's working directory, so `cd` and `export` are
-  // the page's.
-  let cwd = home;
-  const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
-  const resolvePath = (target) => {
-    const path = target.startsWith("/") ? target : target === "~" || target.startsWith("~/")
-      ? home + target.slice(1) : `${cwd}/${target}`;
-    const parts = [];
-    for (const part of path.split("/")) {
-      if (part === "..") parts.pop();
-      else if (part !== "" && part !== ".") parts.push(part);
-    }
-    return "/" + parts.join("/");
-  };
-
-  const builtins = {
-    help: () => term.writeln(
-      (bash ? "<line>              run the line with bash; /bin has coreutils, grep, rg, git…\r\n"
-        : "clai <args>         run clai on the WASIX v2 machine\r\n") +
-      "cd DIR              change the directory the next lines start in\r\n" +
-      "export KEY=VALUE    set a variable for every program, such as OPENAI_API_KEY\r\n" +
-      (bash ? "play FILE           play a sound file, such as a recording, in the page\r\n" : "") +
-      "clear               clear the screen"),
-    clear: () => term.clear(),
-    export: (...assignments) => {
-      for (const assignment of assignments) {
-        const at = assignment.indexOf("=");
-        if (at > 0) env.set(assignment.slice(0, at), assignment.slice(at + 1));
-        else term.writeln(`export: want KEY=VALUE, got ${assignment}`);
-      }
-      return 0;
-    },
-    cd: async (target = "~") => {
-      const dir = resolvePath(target);
-      const status = bash ? await exec("/bin/bash", ["bash", "-c", 'cd -- "$1"', "cd", dir]) : 0;
-      if (status === 0) cwd = dir;
-      return status;
-    },
-  };
-
-  async function run(line) {
-    const args = split(line);
-    if (args.length === 0) return 0;
-    if (builtins[args[0]]) return (await builtins[args[0]](...args.slice(1))) ?? 0;
-    if (bash) return exec("/bin/bash", ["bash", "-c", `cd -- ${quote(cwd)} || exit\n${line}`]);
-    return exec(args[0].includes("/") ? args[0] : `/bin/${args[0]}`, args);
-  }
-
-  // While a program runs, what is typed goes to the machine's terminal as it is.
-  const encoder = new TextEncoder();
-  const editor = new LineEditor(term, "$ ", run, (data) =>
-    worker.postMessage({ input: encoder.encode(data) }));
-  window.runCommand = (line) => editor.submit(line);
-  window.terminalText = () => {
-    const buffer = term.buffer.active;
-    const lines = [];
-    for (let i = 0; i < buffer.length; i++) lines.push(buffer.getLine(i).translateToString(true));
-    return lines.join("\n");
-  };
-  if (bash) document.body.dataset.bash = "true";
-  document.body.dataset.ready = "true";
-  term.focus();
-</script>
+<script type="module" src="./main.js"></script>

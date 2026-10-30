@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node check.mjs"
+    "test": "node --test units.test.mjs && node check.mjs"
   },
   "dependencies": {
     "@mercuryworkshop/wisp-js": "0.4.1",

@@ -4,6 +4,8 @@
 //! after another, so files they write (clai's config in `~/.config`) stay between runs.
 
 mod audio;
+mod observe;
+mod outbox;
 mod packages;
 
 use std::collections::{HashMap, VecDeque};
@@ -41,6 +43,8 @@ pub struct Shell {
     input: Arc<Input>,
     output: Output,
     audio: Arc<audio::AudioFs>,
+    outbox: Arc<outbox::Outbox>,
+    recorder: Arc<observe::Recorder<wasixv2_vnet_wisp::WispBackend>>,
     notes: Vec<String>,
 }
 
@@ -56,7 +60,8 @@ const AUDIO_INPUTS: [&str; 2] = ["mic", "tab"];
 /// `packages`, webc v3 files, of which the earlier has a name two of them share; their volumes
 /// are mounted where the packages say. `/usr/local/bin`, first on `PATH`, holds `local_programs`
 /// under `local_names`: wrappers that come before the commands they wrap. The page's audio
-/// inputs are files in `/run/audio` (see [`audio`]).
+/// inputs are files in `/run/audio` (see [`audio`]), `/run/page/out` sends messages to the page
+/// ([`outbox`]), and what the processes do is recorded for [`Shell::take_events`].
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub async fn boot(
@@ -79,8 +84,10 @@ pub async fn boot(
         output: Arc::new(output.clone()),
         size: window_size(rows, cols),
     };
+    let recorder = Arc::new(observe::Recorder::new(backend.clone(), js_sys::Date::now));
     let mut machine = MachineBuilder::new(Arc::new(WebHost::new()))
         .backend(Arc::new(backend))
+        .observer(recorder.clone())
         .console(console, [true; 3])
         .loader(Arc::new(Cache::default()))
         .build();
@@ -140,8 +147,15 @@ pub async fn boot(
         .mount("/run/audio", audio.clone(), false)
         .await
         .map_err(|e| JsError::new(&format!("cannot mount /run/audio: {e}")))?;
+    let outbox = Arc::new(outbox::Outbox::default());
+    machine
+        .mount("/run/page", outbox.clone(), false)
+        .await
+        .map_err(|e| JsError::new(&format!("cannot mount /run/page: {e}")))?;
     Ok(Shell {
         audio,
+        outbox,
+        recorder,
         signaller: machine.signaller(),
         machine: Rc::new(machine),
         input,
@@ -210,6 +224,17 @@ impl Shell {
     /// The sound files written to `/run/audio/play` since the last call, for the page to play.
     pub fn take_played(&self) -> Vec<Uint8Array> {
         self.audio.take_played().iter().map(|s| Uint8Array::from(s.as_slice())).collect()
+    }
+
+    /// What the machine's processes did since the last call, as a JSON array (see
+    /// [`observe`]).
+    pub fn take_events(&self) -> String {
+        self.recorder.take()
+    }
+
+    /// The messages written to `/run/page/out` since the last call (see [`outbox`]).
+    pub fn take_outbox(&self) -> Vec<Uint8Array> {
+        self.outbox.take().iter().map(|m| Uint8Array::from(m.as_slice())).collect()
     }
 
     /// The terminal is now `rows` by `cols`; the console's foreground group gets SIGWINCH.

@@ -36,7 +36,8 @@ pub struct AudioFs {
     played: Played,
 }
 
-type Played = Arc<Mutex<Vec<Vec<u8>>>>;
+/// The files written to a [`DropNode`], each once it closed, oldest first.
+pub(crate) type Played = Arc<Mutex<Vec<Vec<u8>>>>;
 
 /// One input: what it captured that its readers have not read yet.
 struct Input {
@@ -164,7 +165,7 @@ impl Filesystem for AudioFs {
     }
 }
 
-fn attr(ino: u64, file_type: FileType, mode: u32) -> Attr {
+pub(crate) fn attr(ino: u64, file_type: FileType, mode: u32) -> Attr {
     let epoch = Timestamp::default();
     Attr {
         ino,
@@ -217,7 +218,7 @@ impl Node for Root {
 
     async fn lookup(&self, name: &[u8]) -> FsResult<Arc<dyn Node>> {
         if name == PLAY.as_bytes() {
-            return Ok(Arc::new(PlayNode(self.play_ino(), self.1.clone())));
+            return Ok(Arc::new(DropNode::new(self.play_ino(), self.1.clone(), MAX_PLAYED)));
         }
         let input = self.0.iter().find(|i| i.name.as_bytes() == name);
         Ok(Arc::new(InputNode(input.ok_or(Errno::ENOENT)?.clone())))
@@ -364,13 +365,25 @@ impl Handle for Ender {
     }
 }
 
-/// `play`: a write-only file whose content, once closed, the page plays.
-struct PlayNode(u64, Played);
+/// A write-only file whose content, once closed, goes to the page: `play`'s sound files, which
+/// the page plays, and the page's outbox ([`crate::outbox`]). A file over `max` bytes fails to
+/// write with `EFBIG`.
+pub(crate) struct DropNode {
+    ino: u64,
+    inbox: Played,
+    max: usize,
+}
+
+impl DropNode {
+    pub(crate) fn new(ino: u64, inbox: Played, max: usize) -> Self {
+        Self { ino, inbox, max }
+    }
+}
 
 #[async_trait(?Send)]
-impl Node for PlayNode {
+impl Node for DropNode {
     fn ino(&self) -> u64 {
-        self.0
+        self.ino
     }
 
     fn file_type(&self) -> FileType {
@@ -382,7 +395,7 @@ impl Node for PlayNode {
     }
 
     async fn getattr(&self) -> FsResult<Attr> {
-        Ok(attr(self.0, FileType::Regular, 0o222))
+        Ok(attr(self.ino, FileType::Regular, 0o222))
     }
 
     async fn setattr(&self, _attr: &SetAttr) -> FsResult<Attr> {
@@ -395,7 +408,8 @@ impl Node for PlayNode {
         }
         Ok(Box::new(Player {
             sound: Mutex::default(),
-            played: self.1.clone(),
+            played: self.inbox.clone(),
+            max: self.max,
         }))
     }
 }
@@ -403,12 +417,13 @@ impl Node for PlayNode {
 struct Player {
     sound: Mutex<Vec<u8>>,
     played: Played,
+    max: usize,
 }
 
 impl Player {
     fn add(&self, data: &[u8]) -> FsResult<usize> {
         let mut sound = self.sound.lock().unwrap();
-        if sound.len() + data.len() > MAX_PLAYED {
+        if sound.len() + data.len() > self.max {
             return Err(Errno::EFBIG);
         }
         sound.extend_from_slice(data);

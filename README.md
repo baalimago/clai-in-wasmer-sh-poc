@@ -21,6 +21,48 @@ in bash, that clai calls an MCP server that `uvx` starts, that its async command
 slivingdoc serves with libgit2 behind it, that clai calls the filesystem MCP server that `npx`
 starts, and that ffmpeg records Chromium's fake microphone and
 clai's meeting-transcriber profile records and transcribes with it (with clai's test models).
+It also checks that the under-the-hood view sees what a line does, and runs the Minutes app's
+Record button through to the agent's reply. `web/units.test.mjs` covers the page's logic that
+needs no browser.
+
+## Minutes, and under the hood
+
+The page is split. The left half is **Minutes**, a meeting-notes app; the right half shows what
+the machine does for it, with the terminal as one of its tabs. Every button of the app runs a
+line in that terminal, as if typed, after what the terminal runs, with a `# <button>, from
+Minutes` comment above it:
+
+| Button | Line |
+| --- | --- |
+| Record | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber@13 query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook` |
+| Stop recording | Enter on the terminal, which ends clai's `audio_record` |
+| Send (answer the agent) | the same, with `-re` and the answer as the query |
+| Connect notebook | `slivingdoc login`, in `~/notebook` (the Terminal tab opens for its link) |
+| Refresh, or a meeting | `find meetings/summaries`, `cat` of the meeting's summary |
+
+The agent is the whole transcriber: it records (its `audio_record` tool starts ffmpeg), transcribes
+with speaker labels (`gpt-4o-transcribe-diarize`, so the app asks for `OPENAI_API_KEY`, which it
+passes to every run and never shows unmasked), and files the notes with slivingdoc. The app only
+puts the notebook's layout (`meetings/summaries/<start>_<slug>.md` and
+`meetings/transcripts/...`) at the top of the query, so the profile stays as it is.
+
+A line sends what the app reads to `/run/page/out`, a write-only file whose every write, once
+closed, reaches the page as one message whose first line names it (`reply`, `meetings`,
+`meeting`); the rest of what it prints stays in the terminal.
+
+The right half is built from the kernel itself: the WASIX v2 trace layer
+(`components/wasmer/lib/wasixv2/trace`) reports each `execve`, exit, open, `connect`, `dup`,
+close, rename, mkdir and unlink that succeeds, and the bytes through each descriptor, for every
+process, WASIX v1 programs such as bash and ffmpeg included. `web/src/observe.rs` keeps them
+until the page takes them, as JSON, adding up the bytes a descriptor moves between two other
+events and naming the host behind each address the WISP network handed out. Each line runs as
+`bash -c LINE TAG`, so a process's tag, from its `$0` and inherited by what it starts, says which
+click or terminal line it belongs to. The view (`web/www/hood.js`) shows the last click's line
+and its process tree, the event log, the connections by host and the files written, with the
+bytes moved through redirections and inherited descriptors counted for the file or connection
+behind them. The app's progress steps come from the same events: the ffmpeg with an input is the
+recording, a connection to api.openai.com after it the transcription, one from slivingdoc the
+save.
 
 ## Prerequisites
 

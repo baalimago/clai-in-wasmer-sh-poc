@@ -2538,6 +2538,7 @@ name = "wasixv2-trace"
 version = "0.0.0"
 dependencies = [
  "tracing",
+ "wasixv2-abi",
  "wasixv2-syscalls",
 ]
 

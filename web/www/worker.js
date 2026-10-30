@@ -49,6 +49,7 @@ const shell = await boot(
 );
 for (const note of shell.notes()) post({ log: `\x1b[33m${note}\x1b[0m` });
 const home = shell.login_env().find((v) => v.startsWith("HOME="))?.slice("HOME=".length) ?? "/";
+post({ events: shell.take_events() });
 post({ ready: true, bash: list.some(({ name }) => name === "wasmer/bash"), home });
 
 // The audio inputs whose /run/audio files are open, which the page captures and sends back.
@@ -67,6 +68,10 @@ onmessage = async ({ data: { path, args, env, input, size, samples } }) => {
     const bytes = shell.take_output();
     if (bytes.length > 0) post({ output: bytes });
     for (const sound of shell.take_played()) post({ play: sound });
+    const events = shell.take_events();
+    if (events !== "[]") post({ events });
+    const outbox = shell.take_outbox();
+    if (outbox.length > 0) post({ outbox });
     audio();
   };
   const timer = setInterval(drain, 30);

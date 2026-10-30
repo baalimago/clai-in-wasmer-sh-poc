@@ -85,13 +85,14 @@ export class LineEditor {
     this.line = line;
   }
 
-  async submit(line) {
+  // Runs `line`, as typed or for `tag` (who asked for it, which the line's processes carry).
+  async submit(line, tag) {
     this.busy = true;
     this.line = "";
     this.recalled = 0;
     if (line.trim() !== "" && this.history.at(-1) !== line) this.history.push(line);
     try {
-      return await this.run(line);
+      return await this.run(line, tag);
     } finally {
       this.busy = false;
       this.term.write(this.prompt);
