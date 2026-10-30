@@ -6,8 +6,8 @@ import { test } from "node:test";
 import { Machine, describe, label, mask } from "./www/hood.js";
 import { notePath, renderMarkdown } from "./www/markdown.js";
 import {
-  accountOf, describeFile, groupMeetings, meetingMeta, parseApproval, parseList, parseNote, replyText,
-  summariesIn,
+  accountOf, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
+  parseSpaces, profilePage, replyText, splitMessage, summariesIn,
 } from "./www/minutes.js";
 
 const exec = (pid, ppid, path, argv, t = 1) => ({ t, type: "exec", pid, ppid, path, argv });
@@ -156,4 +156,25 @@ test("slivingdoc's login gives its sign-in page and code, then who approved it",
   assert.deepEqual(parseApproval(lines), { code: "FDFS-RLGM", url: "https://www.slivingdoc.dev/cli/login#FDFS-RLGM" });
   assert.equal(accountOf('{"logins":[{"Key":"k","Account":"ada@example.com"}]}'), "ada@example.com");
   assert.equal(accountOf("not json"), null);
+});
+
+test("a login's spaces, and whether one is its default", () => {
+  const none = "HOSTED  https://api.slivingdoc.dev  ada@example.com\n  main  write  ada@example.com\n" +
+    "  notes  read  ada@example.com\nNo default space; run 'slivingdoc space <name>' to choose one.\n";
+  assert.deepEqual(parseSpaces(none), { names: ["main", "notes"], chosen: false });
+  assert.equal(parseSpaces("HOSTED  https://api.slivingdoc.dev  ada\n* main  write  ada\n").chosen, true);
+});
+
+test("a hub profile is trusted before it runs, and its page says what it runs", () => {
+  assert.equal(isRemote("cchub:baalimago/meeting-transcriber@13"), true);
+  assert.equal(isRemote("/tmp/meeting.json"), false);
+  assert.equal(profilePage("cchub:baalimago/meeting-transcriber@13"), "https://www.clai.chat/hub/baalimago/meeting-transcriber/");
+  assert.equal(profilePage("gh:a/b/c.json@v1"), null);
+});
+
+test("a message names its topic on its first line, and its body stays bytes", () => {
+  const { topic, body } = splitMessage(new Uint8Array([...new TextEncoder().encode("recording-part\n"), 0, 10, 255]));
+  assert.equal(topic, "recording-part");
+  assert.deepEqual([...body], [0, 10, 255]);
+  assert.deepEqual(splitMessage(new TextEncoder().encode("recording-end")).body.length, 0);
 });

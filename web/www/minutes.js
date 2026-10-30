@@ -15,7 +15,8 @@ export const NOTEBOOK_FORMAT =
   "Notebook format for this app: keep each meeting in the slivingdoc notebook as two files, " +
   "meetings/summaries/<start>_<slug>.md and meetings/transcripts/<start>_<slug>.md, " +
   "<start> in the form 2026-10-30T08-00Z. Begin each with front matter holding title, date " +
-  "(ISO 8601) and duration (minutes).";
+  "(ISO 8601) and duration (minutes). Record with audio_record's dir set to /tmp/recordings, " +
+  "so the audio stays out of the notebook.";
 
 export const DEFAULTS = {
   profile: "cchub:baalimago/meeting-transcriber@13",
@@ -137,8 +138,44 @@ export function accountOf(credentials) {
   return found;
 }
 
+// The spaces `slivingdoc space` lists for the stored login, and whether one is the default.
+export function parseSpaces(text) {
+  const names = [...text.matchAll(/^ {2}(\S+) {2,}(?:write|read)\b/gm)].map((m) => m[1]);
+  return { names, chosen: !/No default space/.test(text) };
+}
+
+// A profile clai fetches from the hub or a repository, rather than a file on the machine.
+export const isRemote = (profile) => /^(cchub|gh):/.test(profile);
+
+// The hub's page for a cchub: profile, where its prompt and tools can be read.
+export function profilePage(profile) {
+  const m = /^cchub:([^/@\s]+)\/([^/@\s]+)/.exec(profile);
+  return m ? `https://www.clai.chat/hub/${m[1]}/${m[2]}/` : null;
+}
+
+// JSON on one line: an environment variable with a newline does not reach the machine.
+const compact = (json) => {
+  try {
+    return JSON.stringify(JSON.parse(json));
+  } catch {
+    return json;
+  }
+};
+
+// A message from /run/page/out: its first line names its topic, and the rest is its body.
+export function splitMessage(bytes) {
+  const at = bytes.indexOf(10);
+  const end = at < 0 ? bytes.length : at;
+  return { topic: new TextDecoder().decode(bytes.subarray(0, end)), body: bytes.subarray(Math.min(bytes.length, end + 1)) };
+}
+
+// Messages hold at most 16 MB, so a recording comes in parts.
+const PART = 15_000_000;
+
 const CREDENTIALS = "~/.config/slivingdoc/credentials.json";
 const STORED_LOGIN = "minutes.slivingdoc-credentials";
+const STORED_TRUST = "minutes.clai-trust";
+const TRUST = '"$(clai confdir)/trust.json"';
 
 const transcriptOf = (summary) => summary.replace("meetings/summaries/", "meetings/transcripts/");
 
@@ -147,7 +184,7 @@ export class Minutes {
   // `machine.type(text)` types on its console. `hood` shows what a click ran, `model` is what
   // the machine did, `env` the variables every run gets, `audio` the inputs being captured.
   // `store` keeps the slivingdoc login in the browser: get(key), set(key, value).
-  constructor({ root, machine, hood, model, env, audio, store, config }) {
+  constructor({ root, machine, hood, model, env, audio, store, recordings, config }) {
     this.root = root;
     this.machine = machine;
     this.hood = hood;
@@ -155,8 +192,11 @@ export class Minutes {
     this.env = env;
     this.audio = audio;
     this.store = store;
+    this.recordings = recordings;
     this.streams = new Map();
     this.login = null;
+    this.trusted = null;
+    this.spaces = null;
     this.config = { ...DEFAULTS, ...config };
     this.meetings = [];
     this.waiters = new Map();
@@ -200,6 +240,10 @@ export class Minutes {
       this.record($("#title").value.trim() || "Meeting", $("#details").value.trim());
     };
     $("#stop").onclick = () => this.stop();
+    $("#space-form").onsubmit = (event) => {
+      event.preventDefault();
+      if ($("#space").value) this.chooseSpace($("#space").value);
+    };
     $("#share-tab").onclick = () => this.share?.();
     $("#history").onclick = () => this.history();
     $("#reply-form").onsubmit = (event) => {
@@ -227,12 +271,63 @@ export class Minutes {
     if (credentials) {
       const line = `mkdir -p ~/.config/slivingdoc && printf '%s' "$SLIVINGDOC_CREDENTIALS" > ${CREDENTIALS}`;
       const { status } = await this.run("Restore the slivingdoc login", line, {
-        followUp: true, env: { SLIVINGDOC_CREDENTIALS: credentials },
+        followUp: true, env: { SLIVINGDOC_CREDENTIALS: compact(credentials) },
       });
       if (status === 0) this.login = accountOf(credentials) ?? "signed in";
     }
+    const trust = this.store.get(STORED_TRUST);
+    if (trust) {
+      const line = `mkdir -p "$(clai confdir)" && printf '%s' "$CLAI_TRUST" > ${TRUST}`;
+      const { status } = await this.run("Restore the agent's trust", line, { followUp: true, env: { CLAI_TRUST: compact(trust) } });
+      if (status === 0) this.trusted = this.store.get(STORED_TRUST + ".profile");
+    }
     this.render();
+    if (this.login) await this.checkSpace();
     await this.refresh(true);
+  }
+
+  get needsTrust() {
+    return isRemote(this.config.profile) && this.trusted !== this.config.profile;
+  }
+
+  // clai asks on the console before it first runs a profile from the hub: the click on
+  // Record is the answer, and the trust it records is kept in the browser.
+  async trust() {
+    const profile = this.config.profile;
+    const line = `clai profiles trust ${quote(profile)} </dev/null >&2 && { echo trust; cat ${TRUST}; } > /run/page/out`;
+    const { status, body } = await this.run("Trust the agent", line, { topic: "trust", followUp: true });
+    if (status !== 0 || !body) {
+      this.status(`clai could not fetch or trust ${profile} (exit ${status}). The peek's terminal shows why.`);
+      return false;
+    }
+    this.store.set(STORED_TRUST, compact(body));
+    this.store.set(STORED_TRUST + ".profile", profile);
+    this.trusted = profile;
+    return true;
+  }
+
+  // A login needs a default space before slivingdoc can pull: the app asks for one if the
+  // login has none, and keeps the choice with the login.
+  async checkSpace() {
+    const { status, body } = await this.run("List slivingdoc spaces",
+      "{ echo spaces; slivingdoc space </dev/null 2>&1; } > /run/page/out", { topic: "spaces", followUp: true });
+    if (status !== 0 || body === null) {
+      this.spaces = null;
+      return this.status(`slivingdoc could not list the login's spaces (exit ${status}).`);
+    }
+    const { names, chosen } = parseSpaces(body);
+    this.spaces = chosen ? null : names;
+    this.render();
+  }
+
+  async chooseSpace(name) {
+    const line = `slivingdoc space ${quote(name)} </dev/null >&2 && { echo credentials; cat ${CREDENTIALS}; } > /run/page/out`;
+    const { status, body } = await this.run(`Use space ${name}`, line, { topic: "credentials" });
+    if (status !== 0 || !body) return this.status(`slivingdoc could not make ${name} the default space (exit ${status}).`);
+    this.store.set(STORED_LOGIN, compact(body));
+    this.spaces = null;
+    this.render();
+    await this.refresh();
   }
 
   // `slivingdoc login` in the machine: its sign-in page opens in `tab` (opened by the click,
@@ -262,19 +357,20 @@ export class Minutes {
       this.render();
       return;
     }
-    this.store.set(STORED_LOGIN, body);
+    this.store.set(STORED_LOGIN, compact(body));
     this.login = accountOf(body) ?? "signed in";
     this.signing = null;
     this.connecting = false;
     this.render();
+    await this.checkSpace();
     await this.refresh();
   }
 
   // A message from /run/page/out: its first line says what it answers.
   receive(bytes) {
-    const text = new TextDecoder().decode(bytes);
-    const at = text.indexOf("\n");
-    const [topic, body] = at < 0 ? [text, ""] : [text.slice(0, at), text.slice(at + 1)];
+    const { topic, body: raw } = splitMessage(bytes);
+    if (topic === "recording-part") return this.parts?.push(raw.slice());
+    const body = new TextDecoder().decode(raw);
     this.streams.get(topic)?.(body);
     const waiter = this.waiters.get(topic);
     if (waiter) {
@@ -302,12 +398,17 @@ export class Minutes {
 
   // Pulls the notebook when connected, then lists its meetings with their front matter.
   async refresh(followUp = false) {
-    const pull = this.connected ? "slivingdoc pull >&2; " : "";
+    const pull = this.connected ? "slivingdoc pull >&2 || echo pull-failed > /run/page/out; " : "";
     const line = `${this.cd()} && ${pull}{ echo meetings; ` +
       "for f in $(find meetings/summaries -name '*.md' 2>/dev/null); do echo \"@@ $f\"; " +
       "sed -n '1{/^---$/!q};2,/^---$/p' \"$f\" | head -20; done; } > /run/page/out";
+    let pullFailed = false;
+    this.streams.set("pull-failed", () => (pullFailed = true));
     const { status, body } = await this.run("Refresh", line, { topic: "meetings", followUp });
+    this.streams.delete("pull-failed");
     if (status !== 0 || body === null) return this.status(`Listing the notebook failed (exit ${status}).`);
+    if (!pullFailed && this.$("#status").textContent.startsWith("slivingdoc could not pull")) this.status("");
+    if (pullFailed) this.status("slivingdoc could not pull the notebook, so this list is what is on this machine. The peek's terminal shows why.");
     this.meetings = parseList(body);
     this.render();
   }
@@ -329,6 +430,31 @@ export class Minutes {
     this.historyItems = null;
     this.status("");
     this.show("meeting");
+    await this.showRecording(meeting.path);
+  }
+
+  // The recording the agent made for a meeting, from the machine into the browser's storage.
+  async keepRecording(path, key) {
+    this.parts = [];
+    const line = `${this.cd()} && f=${quote(path)}; size=$(wc -c < "$f") || exit; ` +
+      `for ((at = 0; at < size; at += ${PART})); do { echo recording-part; tail -c +$((at + 1)) "$f" | head -c ${PART}; } > /run/page/out; done; ` +
+      "echo recording-end > /run/page/out";
+    const { status, body } = await this.run("Keep the recording", line, { topic: "recording-end", followUp: true });
+    const parts = this.parts;
+    this.parts = null;
+    if (status !== 0 || body === null) return this.status(`Could not read the recording ${path} (exit ${status}).`);
+    if (!(await this.recordings.put(key, new Blob(parts, { type: "audio/wav" })))) {
+      this.status("This browser keeps no storage, so the recording is not kept.");
+    }
+  }
+
+  async showRecording(key) {
+    const audio = this.$("#recording");
+    const blob = await this.recordings.get(key);
+    if (audio.src) URL.revokeObjectURL(audio.src);
+    audio.hidden = !blob;
+    if (blob) audio.src = URL.createObjectURL(blob);
+    else audio.removeAttribute("src");
   }
 
   async history() {
@@ -346,7 +472,9 @@ export class Minutes {
     const c = this.config;
     const env = c.env ? `${c.env} ` : "";
     const flags = c.flags ? `${c.flags} ` : "";
-    return `${this.cd()} && { echo reply; ${env}clai -reply-only ${reply ? "-re " : ""}-profile-path ${c.profile} ` +
+    // slivingdoc's server then keeps the notebook the agent's file tools write in.
+    const root = this.connected ? 'SLIVINGDOC_WORKSPACE_ROOT="$PWD" ' : "";
+    return `${this.cd()} && { echo reply; ${root}${env}clai -reply-only ${reply ? "-re " : ""}-profile-path ${c.profile} ` +
       `${flags}query ${quote(query)}; } > /run/page/out`;
   }
 
@@ -354,7 +482,9 @@ export class Minutes {
     if (!this.env.has("OPENAI_API_KEY") && !this.config.flags) {
       return this.status("Add your OpenAI key first.");
     }
+    if (this.spaces) return this.status("Choose the slivingdoc space for your meetings first.");
     this.status("");
+    if (this.needsTrust && !(await this.trust())) return;
     this.current = null;
     this.levels = [];
     this.recording = { title, startedAt: new Date(), started: null, stages: new Set() };
@@ -387,6 +517,7 @@ export class Minutes {
     r.reply = replyText(body ?? "");
     this.render();
     if (status !== 0) return;
+    if (this.connected) await this.save(r.title);
     const before = new Set(this.meetings.map((m) => m.path));
     await this.refresh(true);
     const linked = summariesIn(r.reply);
@@ -394,9 +525,25 @@ export class Minutes {
       this.meetings.find((m) => !before.has(m.path));
     if (filed) {
       await this.open(filed, true);
+      if (r.audioPath) {
+        await this.keepRecording(r.audioPath, filed.path);
+        await this.showRecording(filed.path);
+      }
       this.recording = r;
       this.render();
     }
+  }
+
+  // Publishes what the agent filed, whether or not it committed through its notes tools.
+  async save(title) {
+    this.recording.stages.add("saving");
+    const line = `${this.cd()} && slivingdoc commit -m ${quote(`Minutes: ${title}`)} >&2`;
+    const { status } = await this.run("Save to slivingdoc", line, { followUp: true });
+    if (status !== 0) {
+      this.status("slivingdoc could not save the notes, so they are only on this machine. The peek's terminal shows why.");
+      return false;
+    }
+    return true;
   }
 
   // Enter ends the recording: the agent's audio_record waits for it on the console.
@@ -438,6 +585,8 @@ export class Minutes {
         if (ffmpeg.end !== null) {
           r.stages.add("recorded");
           r.recordedAt ??= ffmpeg.end;
+          // clai records into a .part file and renames it once the recording is whole.
+          r.audioPath ??= ffmpeg.argv.at(-1).replace(/\.part$/, "");
         }
       }
       const mine = (pid) => this.model.procs.get(pid)?.action === action;
@@ -485,6 +634,16 @@ export class Minutes {
       if (this.signing.url) $("#signin-link").href = this.signing.url;
     }
     $("#connect").hidden = this.connected;
+    $("#space-form").hidden = !this.spaces;
+    if (this.spaces && $("#space").options.length !== this.spaces.length) {
+      $("#space").replaceChildren(...this.spaces.map((name) => new Option(name, name)));
+    }
+    const page = profilePage(this.config.profile);
+    $("#trust-note").hidden = !this.needsTrust;
+    $("#trust-profile").textContent = this.config.profile;
+    $("#trust-link").hidden = !page;
+    if (page) $("#trust-link").href = page;
+    $("#record-form > .primary").textContent = this.needsTrust ? "Trust the agent and start recording" : "Start recording";
     $("#notebook-status").textContent = this.connected ? "Notebook: slivingdoc" : "Notebook: in this tab";
     for (const view of this.root.querySelectorAll("[data-view]")) view.hidden = view.dataset.view !== (this.view ?? "record");
     this.renderList();

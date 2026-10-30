@@ -7,6 +7,7 @@ import { LineEditor, split } from "./shell.js";
 import { AudioInputs } from "./audio.js";
 import { HoodView, Machine } from "./hood.js";
 import { Minutes } from "./minutes.js";
+import { Recordings } from "./recordings.js";
 
 // No convertEol: clai's output comes through the machine's terminal, which turns "\n" into
 // "\r\n" itself unless the program asked for raw output.
@@ -237,6 +238,7 @@ minutes = new Minutes({
       }
     },
   },
+  recordings: new Recordings(globalThis.indexedDB),
   config: window.minutesConfig ?? {},
 });
 minutes.start();
