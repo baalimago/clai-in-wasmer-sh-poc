@@ -60,8 +60,18 @@ const audio = () => {
   wanted = now.join();
 };
 
-onmessage = async ({ data: { path, args, env, input, size, samples } }) => {
+onmessage = async ({ data: { path, args, env, input, size, samples, devices } }) => {
   if (samples) return shell.push_audio(samples.name, samples.bytes);
+  if (devices) {
+    for (const { name, label } of devices) {
+      try {
+        shell.add_audio_input(name, label);
+      } catch (error) {
+        post({ log: `\x1b[33mno /run/audio/${name}: ${error}\x1b[0m` });
+      }
+    }
+    return;
+  }
   if (input) return shell.type_input(input);
   if (size) return shell.resize(size.rows, size.cols);
   const drain = () => {

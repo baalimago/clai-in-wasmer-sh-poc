@@ -200,12 +200,16 @@ with SIGINT. In the page:
 
 | Input | pulse name | What it records |
 | --- | --- | --- |
-| `/run/audio/mic` | `browser-mic` | The microphone, which the browser asks permission for |
+| `/run/audio/mic` | `browser-mic` | The browser's default microphone |
 | `/run/audio/tab` | `browser-tab.monitor` | The audio of a tab, window or screen: a button asks you to pick one (a meeting's tab, say). Until you do, it records silence |
+| `/run/audio/devN` | `browser-devN`, or `browser-devN.monitor` | Each other audio input of the browser's. On Linux, PipeWire and PulseAudio offer each output's "Monitor of ..." as one, which holds what the computer plays, a meeting app's audio included: it is a sink's monitor here too, and the first is the default sink |
 
-The page captures an input only while ffmpeg has its file open, at 48 kHz on one `AudioContext`,
+The page asks for the microphone when it loads, which is what lets the browser name its audio
+inputs, and adds each to `/run/audio`; `/run/audio/devices` lists them, a `name<TAB>label` line
+each. clai's `audio_sources` then sees them all, and its agent picks which to record: by default
+the default microphone and the default sink's monitor, mixed into one recording. The page captures an input only while ffmpeg has its file open, at 48 kHz on one `AudioContext`,
 so a mic and tab recording stay in step. `/usr/local/bin/ffmpeg` (`audio/ffmpeg.sh`) answers
-`-sources pulse` and `-sinks pulse` with those names and turns `-f pulse -i NAME` into the raw
+`-sources pulse` and `-sinks pulse` with those names and labels and turns `-f pulse -i NAME` into the raw
 file. On SIGINT it writes to the input files, which ends them, so ffmpeg reads to the end and
 finishes the WAV as it would on SIGINT: this ffmpeg is plain WASI and cannot catch signals.
 

@@ -4,6 +4,8 @@
 //! captured and get end of file, which is how a recording stops cleanly (see `audio/ffmpeg.sh`).
 //! A read waits until there is audio. The page captures an input only while something has its
 //! file open for reading ([`AudioFs::open_inputs`]), and feeds it with [`AudioFs::push`].
+//! The page adds inputs as it finds the browser's devices ([`AudioFs::add`]), and
+//! `/run/audio/devices` lists them all, one `name<TAB>label` line each, for `audio/ffmpeg.sh`.
 //! `/run/audio/play` goes the other way: what is written to it, once closed, is a sound file
 //! for the page to play ([`AudioFs::take_played`]).
 
@@ -25,16 +27,22 @@ const MAX_BUFFERED: usize = 30 * SAMPLE_RATE as usize * 2;
 /// `f_type` of `statfs`: "audi" in ASCII. No Linux filesystem uses it.
 const AUDIO_MAGIC: u32 = 0x6175_6469;
 const ROOT_INO: u64 = 1;
+const PLAY_INO: u64 = 2;
+const DEVICES_INO: u64 = 3;
+const FIRST_INPUT_INO: u64 = 4;
 const NAME_MAX: usize = 255;
 const PLAY: &str = "play";
+const DEVICES: &str = "devices";
 /// The largest sound file `play` takes: 64 MiB, ten minutes of 48 kHz stereo WAV and more.
 const MAX_PLAYED: usize = 64 << 20;
 
-/// The inputs, in the order the page names them.
+/// The inputs, in the order the page named them.
 pub struct AudioFs {
-    inputs: Arc<[Arc<Input>]>,
+    inputs: Inputs,
     played: Played,
 }
+
+type Inputs = Arc<Mutex<Vec<Arc<Input>>>>;
 
 /// The files written to a [`DropNode`], each once it closed, oldest first.
 pub(crate) type Played = Arc<Mutex<Vec<Vec<u8>>>>;
@@ -42,6 +50,7 @@ pub(crate) type Played = Arc<Mutex<Vec<Vec<u8>>>>;
 /// One input: what it captured that its readers have not read yet.
 struct Input {
     name: String,
+    label: Mutex<String>,
     ino: u64,
     state: Mutex<State>,
 }
@@ -75,34 +84,48 @@ impl std::fmt::Display for InvalidName {
 impl std::error::Error for InvalidName {}
 
 impl AudioFs {
-    pub fn new(names: &[String]) -> Result<Self, InvalidName> {
-        let mut inputs = Vec::with_capacity(names.len());
-        for (ino, name) in (ROOT_INO + 1..).zip(names) {
-            let valid = !name.is_empty()
-                && name.len() <= NAME_MAX
-                && name != "."
-                && name != ".."
-                && name != PLAY
-                && !name.bytes().any(|b| b == b'/' || b == 0)
-                && !inputs.iter().any(|i: &Arc<Input>| &i.name == name);
-            if !valid {
-                return Err(InvalidName(name.clone()));
-            }
-            inputs.push(Arc::new(Input {
-                name: name.clone(),
-                ino,
-                state: Mutex::default(),
-            }));
-        }
-        Ok(Self {
-            inputs: inputs.into(),
+    /// The inputs `inputs` names, as `(name, label)`.
+    pub fn new(inputs: &[(String, String)]) -> Result<Self, InvalidName> {
+        let fs = Self {
+            inputs: Inputs::default(),
             played: Played::default(),
-        })
+        };
+        for (name, label) in inputs {
+            fs.add(name, label)?;
+        }
+        Ok(fs)
+    }
+
+    /// Adds input `name`, or relabels it when there is one.
+    pub fn add(&self, name: &str, label: &str) -> Result<(), InvalidName> {
+        let mut inputs = self.inputs.lock().unwrap();
+        if let Some(input) = inputs.iter().find(|i| i.name == name) {
+            *input.label.lock().unwrap() = label.to_owned();
+            return Ok(());
+        }
+        let valid = !name.is_empty()
+            && name.len() <= NAME_MAX
+            && ![".", "..", PLAY, DEVICES].contains(&name)
+            && !name.bytes().any(|b| b == b'/' || b == 0);
+        // A label is one line of the devices file.
+        if !valid || label.contains(['\n', '\t']) {
+            return Err(InvalidName(name.to_owned()));
+        }
+        let ino = FIRST_INPUT_INO + inputs.len() as u64;
+        inputs.push(Arc::new(Input {
+            name: name.to_owned(),
+            label: Mutex::new(label.to_owned()),
+            ino,
+            state: Mutex::default(),
+        }));
+        Ok(())
     }
 
     /// The inputs whose files are open, which the page should capture.
     pub fn open_inputs(&self) -> Vec<String> {
         self.inputs
+            .lock()
+            .unwrap()
             .iter()
             .filter(|i| i.state.lock().unwrap().readers > 0)
             .map(|i| i.name.clone())
@@ -117,7 +140,7 @@ impl AudioFs {
     /// Hands `samples` captured from input `name` to its readers; dropped when nothing reads
     /// it. `false` if there is no such input.
     pub fn push(&self, name: &str, samples: &[u8]) -> bool {
-        let Some(input) = self.inputs.iter().find(|i| i.name == name) else {
+        let Some(input) = self.inputs.lock().unwrap().iter().find(|i| i.name == name).cloned() else {
             return false;
         };
         let mut state = input.state.lock().unwrap();
@@ -157,7 +180,7 @@ impl Filesystem for AudioFs {
             blocks: 0,
             blocks_free: 0,
             blocks_avail: 0,
-            files: self.inputs.len() as u64 + 2,
+            files: self.inputs.lock().unwrap().len() as u64 + 3,
             files_free: 0,
             name_max: NAME_MAX as u32,
             fragment_size: 4096,
@@ -186,12 +209,13 @@ pub(crate) fn attr(ino: u64, file_type: FileType, mode: u32) -> Attr {
     }
 }
 
-struct Root(Arc<[Arc<Input>]>, Played);
+struct Root(Inputs, Played);
 
-impl Root {
-    fn play_ino(&self) -> u64 {
-        ROOT_INO + 1 + self.0.len() as u64
-    }
+/// The devices file: each input's `name<TAB>label` line.
+fn devices(inputs: &Inputs) -> Vec<u8> {
+    let inputs = inputs.lock().unwrap();
+    let lines = inputs.iter().map(|i| format!("{}\t{}\n", i.name, i.label.lock().unwrap()));
+    lines.collect::<String>().into_bytes()
 }
 
 #[async_trait(?Send)]
@@ -218,43 +242,90 @@ impl Node for Root {
 
     async fn lookup(&self, name: &[u8]) -> FsResult<Arc<dyn Node>> {
         if name == PLAY.as_bytes() {
-            return Ok(Arc::new(DropNode::new(self.play_ino(), self.1.clone(), MAX_PLAYED)));
+            return Ok(Arc::new(DropNode::new(PLAY_INO, self.1.clone(), MAX_PLAYED)));
         }
-        let input = self.0.iter().find(|i| i.name.as_bytes() == name);
+        if name == DEVICES.as_bytes() {
+            return Ok(Arc::new(DevicesNode(self.0.clone())));
+        }
+        let inputs = self.0.lock().unwrap();
+        let input = inputs.iter().find(|i| i.name.as_bytes() == name);
         Ok(Arc::new(InputNode(input.ok_or(Errno::ENOENT)?.clone())))
     }
 
     async fn open(&self, _options: OpenOptions) -> FsResult<Box<dyn Handle>> {
-        Ok(Box::new(RootHandle(self.0.clone(), self.play_ino())))
+        let inputs = self.0.lock().unwrap();
+        let mut entries = vec![(PLAY.to_owned(), PLAY_INO), (DEVICES.to_owned(), DEVICES_INO)];
+        entries.extend(inputs.iter().map(|i| (i.name.clone(), i.ino)));
+        Ok(Box::new(RootHandle(entries)))
     }
 }
 
-struct RootHandle(Arc<[Arc<Input>]>, u64);
+/// The directory's entries when it was opened.
+struct RootHandle(Vec<(String, u64)>);
 
 #[async_trait(?Send)]
 impl Handle for RootHandle {
     async fn readdir(&self, cookie: u64, sink: &mut dyn DirSink) -> FsResult<()> {
         let start = usize::try_from(cookie).unwrap_or(usize::MAX);
-        for (i, input) in self.0.iter().enumerate().skip(start) {
+        for (i, (name, ino)) in self.0.iter().enumerate().skip(start) {
             let entry = DirEntry {
-                name: input.name.as_bytes(),
-                ino: input.ino,
+                name: name.as_bytes(),
+                ino: *ino,
                 file_type: FileType::Regular,
                 next: i as u64 + 1,
             };
             if !sink.push(entry) {
-                return Ok(());
+                break;
             }
         }
-        if start <= self.0.len() {
-            sink.push(DirEntry {
-                name: PLAY.as_bytes(),
-                ino: self.1,
-                file_type: FileType::Regular,
-                next: self.0.len() as u64 + 1,
-            });
-        }
         Ok(())
+    }
+}
+
+/// `devices`, read-only: the inputs when it is opened.
+struct DevicesNode(Inputs);
+
+#[async_trait(?Send)]
+impl Node for DevicesNode {
+    fn ino(&self) -> u64 {
+        DEVICES_INO
+    }
+
+    fn file_type(&self) -> FileType {
+        FileType::Regular
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    async fn getattr(&self) -> FsResult<Attr> {
+        let mut attr = attr(DEVICES_INO, FileType::Regular, 0o444);
+        attr.size = devices(&self.0).len() as u64;
+        Ok(attr)
+    }
+
+    async fn setattr(&self, _attr: &SetAttr) -> FsResult<Attr> {
+        Err(Errno::EPERM)
+    }
+
+    async fn open(&self, options: OpenOptions) -> FsResult<Box<dyn Handle>> {
+        if options.write {
+            return Err(Errno::EACCES);
+        }
+        Ok(Box::new(Snapshot(devices(&self.0))))
+    }
+}
+
+struct Snapshot(Vec<u8>);
+
+#[async_trait(?Send)]
+impl Handle for Snapshot {
+    async fn read_at(&self, buf: &mut [u8], offset: u64) -> FsResult<usize> {
+        let start = usize::try_from(offset).unwrap_or(usize::MAX).min(self.0.len());
+        let n = buf.len().min(self.0.len() - start);
+        buf[..n].copy_from_slice(&self.0[start..start + n]);
+        Ok(n)
     }
 }
 

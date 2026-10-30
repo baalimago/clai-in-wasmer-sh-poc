@@ -48,9 +48,10 @@ pub struct Shell {
     notes: Vec<String>,
 }
 
-/// The page's audio inputs, files in `/run/audio`: the microphone, and the tab, window or
-/// screen the user shares.
-const AUDIO_INPUTS: [&str; 2] = ["mic", "tab"];
+/// The page's audio inputs from the start, files in `/run/audio`: the default microphone, and
+/// the tab, window or screen the user shares. The page adds the browser's other audio devices
+/// with [`Shell::add_audio_input`].
+const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab", "Monitor of Shared tab or screen (browser)")];
 
 /// Boots the machine; its traffic leaves through the WISP server at `wisp_url`, its TLS
 /// clients trust `ca_certificates`, a PEM bundle at `/etc/ssl/certs/ca-certificates.crt`, where
@@ -141,8 +142,8 @@ pub async fn boot(
             .await
             .map_err(|e| JsError::new(&format!("cannot mount /usr/local/bin: {e}")))?;
     }
-    let names = AUDIO_INPUTS.map(String::from);
-    let audio = Arc::new(audio::AudioFs::new(&names).map_err(|e| JsError::new(&e.to_string()))?);
+    let inputs = AUDIO_INPUTS.map(|(name, label)| (name.to_owned(), label.to_owned()));
+    let audio = Arc::new(audio::AudioFs::new(&inputs).map_err(|e| JsError::new(&e.to_string()))?);
     machine
         .mount("/run/audio", audio.clone(), false)
         .await
@@ -219,6 +220,11 @@ impl Shell {
         } else {
             Err(JsError::new(&format!("no audio input {name}")))
         }
+    }
+
+    /// Adds input `name`, a device of the browser's described by `label`, to `/run/audio`.
+    pub fn add_audio_input(&self, name: &str, label: &str) -> Result<(), JsError> {
+        self.audio.add(name, label).map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// The sound files written to `/run/audio/play` since the last call, for the page to play.

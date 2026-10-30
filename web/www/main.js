@@ -244,5 +244,11 @@ minutes = new Minutes({
 minutes.start();
 window.minutes = minutes;
 
+// The microphone is asked for up front, so that the browser names its audio inputs; ffmpeg in
+// the machine then lists them all, and the agent picks which to record (audio/ffmpeg.sh).
+const findDevices = async () => worker.postMessage({ devices: await audio.discover() });
+navigator.mediaDevices?.addEventListener("devicechange", () => findDevices());
+await findDevices();
+
 if (bash) document.body.dataset.bash = "true";
 document.body.dataset.ready = "true";

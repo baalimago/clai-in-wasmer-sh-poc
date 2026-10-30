@@ -110,6 +110,14 @@ const RECORD = "CLAI_MOCK_AUDIO_TRANSCRIBE_FILE=/tmp/mic.wav clai -cm mock_test 
 const AUDIO = [
   { line: "ls /run/audio", status: 0, prints: "mic" },
   { line: "ffmpeg -hide_banner -sources pulse", status: 0, prints: "browser-tab.monitor" },
+  // Every audio input of the browser's, the computer's monitor among them, is a pulse device.
+  { line: "ffmpeg -hide_banner -sources pulse", status: 0, prints: "browser-dev2.monitor [Monitor of Built-in Audio Analog Stereo]" },
+  { line: "ffmpeg -hide_banner -sinks pulse", status: 0, prints: "* browser-dev2 [Built-in Audio Analog Stereo]" },
+  {
+    line: "ffmpeg -hide_banner -nostdin -loglevel error -f pulse -i browser-dev2.monitor -t 1 -ac 1 -ar 16000 -y /tmp/monitor.wav && echo bytes=$(wc -c < /tmp/monitor.wav)",
+    status: 0,
+    prints: "bytes=32078",
+  },
   {
     line: "ffmpeg -hide_banner -nostdin -loglevel error -f pulse -i browser-mic -t 2 -ac 1 -ar 16000 -y /tmp/mic.wav && echo bytes=$(wc -c < /tmp/mic.wav)",
     status: 0,
@@ -118,7 +126,8 @@ const AUDIO = [
   { line: "play /tmp/mic.wav", status: 0, prints: "in the player" },
   { line: `printf '%s' ${quote(MEETING)} > /tmp/meeting.json`, status: 0, prints: "" },
   { line: writeAudioConfig(4), status: 0, prints: "" },
-  { line: `${RECORD} 2>&1 | cat`, status: 0, prints: "stopped_because: max_seconds" },
+  // The agent records the microphone and the computer's monitor, mixed.
+  { line: `${RECORD} 2>&1 | cat`, status: 0, prints: "sources: sink=Monitor of Built-in Audio Analog Stereo; mic=" },
   { line: writeAudioConfig(60), status: 0, prints: "" },
 ];
 
@@ -145,6 +154,16 @@ try {
   const page = await context.newPage();
   // Minutes runs its agent with the test models and the meeting-transcriber profile the AUDIO
   // rows write, as they do.
+  // Chromium's fake devices have no monitor source, so the second fake input plays one: on Linux,
+  // PipeWire's "Monitor of ..." inputs hold what the computer plays.
+  await page.addInitScript(() => {
+    const enumerate = MediaDevices.prototype.enumerateDevices;
+    MediaDevices.prototype.enumerateDevices = async function () {
+      return (await enumerate.call(this)).map((d) => d.kind === "audioinput" && d.label === "Fake Audio Input 2"
+        ? { deviceId: d.deviceId, groupId: d.groupId, kind: d.kind, label: "Monitor of Built-in Audio Analog Stereo" }
+        : d);
+    };
+  });
   await page.addInitScript(() => {
     window.minutesConfig = {
       profile: "/tmp/meeting.json",

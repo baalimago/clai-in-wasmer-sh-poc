@@ -46,6 +46,44 @@ export class AudioInputs {
     this.context = null;
     this.ready = null;
     this.active = new Map();
+    // The browser's other audio inputs by the name of their file: their deviceId and label.
+    this.devices = new Map();
+  }
+
+  // Asks for the microphone, which lets the browser name its audio inputs, and returns them as
+  // inputs for the machine, `{ name, label }`: "mic", the default, and "devN" for the others,
+  // on Linux the "Monitor of ..." sources of PipeWire and PulseAudio among them.
+  async discover() {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      this.notice(`no microphone: ${error.message}`);
+      return [];
+    }
+    const trackLabel = stream.getAudioTracks()[0]?.label ?? "";
+    stream.getTracks().forEach((t) => t.stop());
+    const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+    // Chrome lists the default again as "Default - <its label>".
+    const preferred = inputs.find((d) => d.deviceId === "default")?.label.replace(/^Default - /, "") ?? trackLabel;
+    const found = [{ name: "mic", label: preferred || "Microphone (browser)" }];
+    for (const device of inputs) {
+      if (["default", "communications", ""].includes(device.deviceId) || device.label === preferred) continue;
+      let name = [...this.devices].find(([, d]) => d.deviceId === device.deviceId)?.[0];
+      if (!name) {
+        name = `dev${this.devices.size + 1}`;
+        this.devices.set(name, { deviceId: device.deviceId, label: device.label });
+      }
+      found.push({ name, label: (device.label || name).replace(/[\t\n]/g, " ") });
+    }
+    return found;
+  }
+
+  // The label the page gave input `name`.
+  label(name) {
+    if (name === "mic") return "Mic";
+    if (name === "tab") return "Shared tab";
+    return this.devices.get(name)?.label ?? name;
   }
 
   // Captures exactly the inputs `names` lists.
@@ -82,6 +120,14 @@ export class AudioInputs {
     input.node.connect(context.destination);
     if (name === "mic") this.attach(name, input, navigator.mediaDevices.getUserMedia({ audio: true }));
     if (name === "tab") this.offerTab(name, input);
+    const device = this.devices.get(name);
+    if (device) {
+      // A monitor carries what the computer plays: as it is, without a microphone's processing.
+      const raw = device.label.startsWith("Monitor of ");
+      this.attach(name, input, navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: device.deviceId }, echoCancellation: !raw, noiseSuppression: !raw, autoGainControl: !raw },
+      }));
+    }
     this.changed();
   }
 
@@ -90,7 +136,7 @@ export class AudioInputs {
     try {
       stream = await request;
     } catch (error) {
-      this.notice(`no ${name === "mic" ? "microphone" : "shared audio"}: ${error.message}; recording silence`);
+      this.notice(`no ${name === "tab" ? "shared audio" : this.label(name)}: ${error.message}; recording silence`);
       return;
     }
     if (this.active.get(name) !== input) return stream.getTracks().forEach((t) => t.stop());
@@ -120,7 +166,7 @@ export class AudioInputs {
 
   // The inputs captured now, and whether each has a source yet.
   inputs() {
-    return [...this.active].map(([name, input]) => ({ name, live: input.stream !== null }));
+    return [...this.active].map(([name, input]) => ({ name, label: this.label(name), live: input.stream !== null }));
   }
 
   stop(name, input) {

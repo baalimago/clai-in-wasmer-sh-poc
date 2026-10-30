@@ -737,7 +737,8 @@ export class Minutes {
     state.textContent = live ? `Recording ${clock}` : r.stages.has("recorded") ? `Recorded ${clock}` : r.answering ? "The agent is working…" : "Starting the agent…";
     const inputs = this.audio?.inputs() ?? [];
     const tab = inputs.find((i) => i.name === "tab");
-    $("#rec-inputs").textContent = tab ? (tab.live ? "Mic + meeting tab" : "Mic · no tab shared yet") : "Mic";
+    const recorded = inputs.filter((i) => i.name !== "tab" || i.live).map((i) => i.name === "tab" ? "meeting tab" : i.label);
+    $("#rec-inputs").textContent = (recorded.join(" + ") || "Mic") + (tab && !tab.live ? " · no tab shared yet" : "");
     const stages = [
       ["recording", "Recording"],
       ["recorded", "Recorded"],
