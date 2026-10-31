@@ -9,21 +9,31 @@ WASM_BINDGEN_VERSION := 0.2.129
 WASM_BINDGEN := $(CURDIR)/.tools/bin/wasm-bindgen
 BUILD := $(CURDIR)/.build
 
-.PHONY: poc serve check build packages submodules clean FORCE
+# rustup's usual directories, or the ones a prepared machine keeps elsewhere (~/.cache here,
+# where this sandbox's rustup lives). A CARGO_HOME in the environment wins.
+CARGO_HOME ?= $(if $(wildcard $(HOME)/.cargo/bin/cargo),$(HOME)/.cargo,$(HOME)/.cache/cargo)
+RUSTUP_HOME ?= $(if $(wildcard $(HOME)/.rustup/toolchains/*),$(HOME)/.rustup,$(HOME)/.cache/rustup)
+CARGO := $(CARGO_HOME)/bin/cargo
+export CARGO_HOME RUSTUP_HOME
 
-poc: build
+.PHONY: poc serve check build packages go-package submodules clean FORCE
+
+# The page's own crate needs Rust; say so in words a first-time reader can act on.
+CARGO_MISSING = @test -x $(CARGO) || { echo "no cargo at $(CARGO): install rustup, see Prerequisites in README.md"; exit 1; }
+
+poc: build go-package
 	cd $(WEB) && node server.mjs --open
 
 serve: build
 	cd $(WEB) && node server.mjs
 
 # Headless: runs `clai h`, `clai help`, shell lines and an MCP server in the page and checks what
-# they print.
-check: build
+# they print, and builds and runs a Go program with the toolchain the page mounts at /go.
+check: build go-package
 	cd $(WEB) && npx playwright install chromium && npm test
 
 build: $(WWW)/clai.wasm $(WWW)/bin/index.json $(WWW)/ca-certificates.crt $(WWW)/pkg/clai_web.js \
-	$(WWW)/packages/index.json $(WEB)/node_modules
+	$(WWW)/packages/index.json $(WWW)/examples/index.json $(WEB)/node_modules
 
 submodules:
 	git submodule update --init --depth 1
@@ -91,8 +101,9 @@ $(WWW)/bin/launcher.sh: mcp/launcher.sh
 
 # Wrappers in /usr/local/bin, which comes before /bin on PATH: ffmpeg gives /bin/ffmpeg the
 # page's audio inputs as PulseAudio devices (audio/ffmpeg.sh); play plays sound files in the page
-# (audio/play.sh).
-WRAPPERS := ffmpeg play
+# (audio/play.sh); go gives the toolchain the page mounts at /go (research/go-toolchain/go.sh)
+# its GOROOT.
+WRAPPERS := ffmpeg play go
 
 # ffmpeg and ffprobe for wasm32-wasi, built with the wasi-sdk from an ffmpeg release: audio only
 # and without threads (audio/ffmpeg/build.sh). Both are in /bin.
@@ -120,6 +131,15 @@ $(WWW)/bin/%.sh: audio/%.sh
 	@mkdir -p $(@D)
 	cp $< $@
 
+$(WWW)/bin/go.sh: research/go-toolchain/go.sh
+	@mkdir -p $(@D)
+	cp $< $@
+
+# The Go toolchain as a package the page mounts at /go, fetched only when the page asks
+# (research/go-toolchain/bundle.sh).
+go-package:
+	sh research/go-toolchain/bundle.sh
+
 BUILT := $(PROGRAMS) ffmpeg ffprobe
 
 $(WWW)/bin/index.json: $(BUILT:%=$(WWW)/bin/%.wasm) $(WWW)/bin/launcher.sh $(WRAPPERS:%=$(WWW)/bin/%.sh)
@@ -131,6 +151,11 @@ $(WWW)/bin/index.json: $(BUILT:%=$(WWW)/bin/%.wasm) $(WWW)/bin/launcher.sh $(WRA
 $(WWW)/ca-certificates.crt:
 	node -e 'process.stdout.write(require("tls").rootCertificates.join("\n") + "\n")' > $@
 
+# The Go examples the page writes into the guest's ~/examples when it is opened with ?go. These
+# are the files a reader edits; index.json is the one request the page makes for all of them.
+$(WWW)/examples/index.json: FORCE
+	node -e 'const fs = require("node:fs"); const dir = process.argv[1]; const files = {}; const walk = (at, rel) => { for (const name of fs.readdirSync(at).sort()) { const full = at + "/" + name; if (fs.statSync(full).isDirectory()) walk(full, rel + name + "/"); else if (name !== "index.json") files[rel + name] = fs.readFileSync(full, "utf8"); } }; walk(dir, ""); fs.writeFileSync(dir + "/index.json", JSON.stringify({ files }, null, 2) + "\n");' $(WWW)/examples
+
 # bash, coreutils and the rest, from registry.wasmer.io: web/packages.txt lists them.
 packages: $(WWW)/packages/index.json
 
@@ -138,17 +163,19 @@ $(WWW)/packages/index.json: $(WEB)/packages.txt $(WEB)/fetch-packages.mjs
 	cd $(WEB) && node fetch-packages.mjs
 
 $(WWW)/pkg/clai_web.js: $(WASM_BINDGEN) FORCE | submodules
-	cd $(WEB) && cargo build --release --target wasm32-unknown-unknown
+	$(CARGO_MISSING)
+	cd $(WEB) && $(CARGO) build --release --target wasm32-unknown-unknown
 	$(WASM_BINDGEN) --target web --out-dir $(WWW)/pkg \
 		$(WEB)/target/wasm32-unknown-unknown/release/clai_web.wasm
 
 $(WASM_BINDGEN):
-	cargo install wasm-bindgen-cli --version $(WASM_BINDGEN_VERSION) --locked --root $(CURDIR)/.tools
+	$(CARGO_MISSING)
+	$(CARGO) install wasm-bindgen-cli --version $(WASM_BINDGEN_VERSION) --locked --root $(CURDIR)/.tools
 
 $(WEB)/node_modules: $(WEB)/package-lock.json
 	cd $(WEB) && npm ci
 	touch $@
 
 clean:
-	rm -rf $(WEB)/target $(WWW)/pkg $(WWW)/packages $(WWW)/bin $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WEB)/node_modules .tools .build
+	rm -rf $(WEB)/target $(WWW)/pkg $(WWW)/packages $(WWW)/go $(WWW)/bin $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WEB)/node_modules .tools .build
 	cd components/go/src && ./clean.bash

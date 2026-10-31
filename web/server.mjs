@@ -17,6 +17,7 @@ const TYPES = {
   ".mjs": "text/javascript",
   ".css": "text/css",
   ".wasm": "application/wasm",
+  ".webc": "application/octet-stream",
   ".woff2": "font/woff2",
   ".svg": "image/svg+xml",
 };
@@ -39,12 +40,15 @@ export function startServer(port = Number(process.env.PORT ?? 5001)) {
       return;
     }
     try {
-      const body = await readFile(file);
       const type = TYPES[path.extname(file)] ?? "text/plain";
+      // The Go toolchain's package is 171 MB; bundle.sh gzips it, and the browser decodes it.
+      const gz = file.endsWith(".webc") ? await readFile(`${file}.gz`).catch(() => null) : null;
+      const body = gz ?? (await readFile(file));
       // Cross-origin isolated, so guest memory can be a SharedArrayBuffer that a process's
       // threads share (ffmpeg and rg start threads).
       response.writeHead(200, {
         "content-type": type,
+        ...(gz ? { "content-encoding": "gzip" } : {}),
         "cross-origin-opener-policy": "same-origin",
         "cross-origin-embedder-policy": "require-corp",
       }).end(body);

@@ -28,6 +28,22 @@ export function split(line) {
   return words;
 }
 
+// True when the line holds an unquoted shell operator, so bash must see the whole of it:
+// `cd DIR && ...` is a shell line, while `cd DIR` is the page's.
+export function isShellLine(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === "\\" && quote === '"') i++;
+    } else if (c === "'" || c === '"') quote = c;
+    else if (c === "\\") i++;
+    else if ("&|;<>".includes(c)) return true;
+  }
+  return false;
+}
+
 // Reads lines from the terminal, with backspace, ^C, ^L and history on the arrow keys, and
 // hands each to `run`, which resolves when the command is done. What is typed meanwhile goes
 // to `passthrough`.

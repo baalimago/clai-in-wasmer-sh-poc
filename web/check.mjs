@@ -24,6 +24,35 @@ const SHELL = [
   { line: "pwd", prints: "/usr/bin" },
 ];
 
+// The Go toolchain the page mounts at /go when it is opened with ?go: it compiles a program that
+// imports the standard library and a package of the module's own, links it, and the machine then
+// runs what it built. The first build is the slow one: an empty GOCACHE compiles every package
+// the program imports, on the kernel, in the tab.
+const GO_FILES = [
+  ["/tmp/go-demo/go.mod", "module demo\n\ngo 1.26\n"],
+  [
+    "/tmp/go-demo/words/words.go",
+    'package words\n\nimport "strings"\n\n// Up shouts, through the standard library.\nfunc Up(s string) string { return strings.ToUpper(s) }\n',
+  ],
+  [
+    "/tmp/go-demo/main.go",
+    'package main\n\nimport (\n\t"fmt"\n\t"sort"\n\n\t"demo/words"\n)\n\nfunc main() {\n\txs := []string{"b", "a"}\n' +
+      '\tsort.Strings(xs)\n\tfmt.Println(words.Up("hello"), xs)\n}\n',
+  ],
+];
+const GO = [
+  { line: "go version", status: 0, prints: "wasix/wasm" },
+  { line: "cd /tmp/go-demo", status: 0, prints: "" },
+  { line: "go build -o hello . && ls hello", status: 0, prints: "hello" },
+  { line: "./hello", status: 0, prints: "HELLO [a b]" },
+];
+// The examples the page writes into the guest's home (main.js), so a reader has a program to
+// build without writing one. `go run` builds into a temp dir, so the sources stay as shipped.
+const EXAMPLE = [
+  { line: "ls ~/examples", status: 0, prints: "words" },
+  { line: "cd ~/examples/hello && go run .", status: 0, prints: "hello from the tab" },
+];
+
 // npx and uvx start the MCP server ports in /bin, and clai talks MCP to them over pipes. The
 // profile has the shape of cchub:clai/researcher's ddg server; the test model calls the tools
 // its prompt names, with no arguments, so the port's answer is that the query is missing. The
@@ -173,7 +202,7 @@ try {
     };
   });
   page.on("pageerror", (error) => console.error("page error:", error.message));
-  await page.goto(`http://localhost:${server.address().port}/`);
+  await page.goto(`http://localhost:${server.address().port}/?go`);
   await page.waitForSelector("body[data-ready]", { timeout: 120_000 });
   for (const { line, status: want } of COMMANDS) {
     const before = await page.evaluate(() => window.terminalText());
@@ -211,6 +240,33 @@ try {
     console.log(`under the hood: ${seen ? "saw" : "missed"} bash write /tmp/hood.txt`);
     if (!seen) {
       console.error("\nFAIL: the under-the-hood model did not see bash, tagged terminal, write 5 bytes to /tmp/hood.txt");
+      process.exitCode = 1;
+    }
+  }
+  for (const [path, text] of bash ? GO_FILES : []) {
+    const status = await page.evaluate(([file, body]) => window.writeFile(file, body), [path, text]);
+    if (status !== 0) {
+      console.error(`\nFAIL: writing ${path} exited with ${status}`);
+      process.exitCode = 1;
+    }
+  }
+  for (const { line, status: want, prints } of bash ? GO : []) {
+    const before = await page.evaluate(() => window.terminalText());
+    const status = await page.evaluate((line) => window.runCommand(line), line);
+    const printed = (await page.evaluate(() => window.terminalText())).slice(before.length);
+    console.log(printed.trimEnd());
+    if (status !== want || !printed.includes(prints)) {
+      console.error(`\nFAIL: ${line} exited with ${status} (want ${want}) or did not print ${prints}`);
+      process.exitCode = 1;
+    }
+  }
+  for (const { line, status: want, prints } of bash ? EXAMPLE : []) {
+    const before = await page.evaluate(() => window.terminalText());
+    const status = await page.evaluate((line) => window.runCommand(line), line);
+    const printed = (await page.evaluate(() => window.terminalText())).slice(before.length);
+    console.log(printed.trimEnd());
+    if (status !== want || !printed.includes(prints)) {
+      console.error(`\nFAIL: ${line} exited with ${status} (want ${want}) or did not print ${prints}`);
       process.exitCode = 1;
     }
   }

@@ -11,7 +11,9 @@ const fetchBytes = async (url) => {
   return new Uint8Array(await response.arrayBuffer());
 };
 
-const { rows, cols } = await new Promise((resolve) => (onmessage = ({ data }) => resolve(data.size)));
+// `go` is the page's `?go`: the Go toolchain, a 171 MB package it mounts at /go, which the
+// page leaves out otherwise.
+const { size: { rows, cols }, go } = await new Promise((resolve) => (onmessage = ({ data }) => resolve(data)));
 // The registry packages `make` downloaded (fetch-packages.mjs), if it did.
 const packageList = async () => {
   const response = await fetch("./packages/index.json");
@@ -29,9 +31,17 @@ await init();
 const certificates = await fetchBytes("./ca-certificates.crt");
 const [programs, list] = await Promise.all([programList(), packageList()]);
 post({ log: `Loading ${[...programs, ...list].map(({ name }) => name).join(", ")}…` });
-const [programBytes, packages] = await Promise.all([
+if (go) post({ log: "Fetching the Go toolchain for /go…" });
+const [programBytes, packages, toolchain] = await Promise.all([
   Promise.all(programs.map(({ file }) => fetchBytes(`./${file}`))),
   Promise.all(list.map(({ file }) => fetchBytes(`./packages/${file}`))),
+  // `make go-package` packs it; a page opened with ?go without it still boots, and says so.
+  go
+    ? fetchBytes("./go/go.webc").catch(() => {
+        post({ log: "\x1b[33mNo Go toolchain in this page: run make go-package, then reload.\x1b[0m" });
+        return null;
+      })
+    : null,
 ]);
 const local = programs.map(({ dir }) => dir === "/usr/local/bin");
 const pick = (items, wantLocal) => items.filter((_, i) => local[i] === wantLocal);
@@ -43,7 +53,7 @@ const shell = await boot(
   pick(programBytes, false),
   pick(names, true),
   pick(programBytes, true),
-  packages,
+  toolchain ? [...packages, toolchain] : packages,
   rows,
   cols,
 );

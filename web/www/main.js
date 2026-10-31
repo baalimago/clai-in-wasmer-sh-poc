@@ -3,7 +3,7 @@
 // shows what the app's programs print and takes lines of its own.
 import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
 import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
-import { LineEditor, split } from "./shell.js";
+import { LineEditor, split, isShellLine } from "./shell.js";
 import { AudioInputs } from "./audio.js";
 import { HoodView, Machine } from "./hood.js";
 import { Minutes } from "./minutes.js";
@@ -52,7 +52,9 @@ window.hoodModel = model;
 term.writeln("Booting a WASIX v2 machine…");
 const worker = new Worker("./worker.js", { type: "module" });
 const size = () => ({ rows: term.rows, cols: term.cols });
-worker.postMessage({ size: size() });
+// `?go` adds the Go toolchain to the machine (see worker.js), which costs a 40 MB download.
+const go = new URLSearchParams(location.search).has("go");
+worker.postMessage({ size: size(), go });
 let finished = null;
 let minutes = null;
 // The loudest of each input's latest samples, for the waveform.
@@ -109,6 +111,7 @@ const { bash, home } = await new Promise((ready) => {
 term.writeln(bash
   ? "Ready. Try \x1b[1mls /bin\x1b[0m, \x1b[1mclai h\x1b[0m, or \x1b[1mhelp\x1b[0m.\r\n"
   : "Ready, without bash: run \x1b[1mmake packages\x1b[0m for it. Try \x1b[1mclai h\x1b[0m.\r\n");
+if (!go) term.writeln("\x1b[2mOpen this page with \x1b[1m?go\x1b[0m\x1b[2m and the machine mounts the Go toolchain at /go.\x1b[0m\r\n");
 document.querySelector("#machine-chip").textContent = "wasmer.sh · WASIX v2 kernel: running";
 term.onResize(() => worker.postMessage({ size: size() }));
 
@@ -147,6 +150,7 @@ const builtins = {
     "cd DIR              change the directory the next lines start in\r\n" +
     "export KEY=VALUE    set a variable for every program, such as OPENAI_API_KEY\r\n" +
     (bash ? "play FILE           play a sound file, such as a recording, in the page\r\n" : "") +
+    (go ? "go <args>           build and run Go in the machine's /go toolchain (~/examples has four)\r\n" : "") +
     "clear               clear the screen"),
   clear: () => term.clear(),
   export: (...assignments) => {
@@ -168,7 +172,7 @@ const builtins = {
 async function run(line, tag = "terminal", extra = {}) {
   const args = split(line);
   if (args.length === 0) return 0;
-  if (builtins[args[0]]) return (await builtins[args[0]](...args.slice(1))) ?? 0;
+  if (builtins[args[0]] && !isShellLine(line)) return (await builtins[args[0]](...args.slice(1))) ?? 0;
   if (bash) return exec("/bin/bash", ["bash", "-c", `cd -- ${quote(cwd)} || exit\n${line}`, tag], extra);
   return exec(args[0].includes("/") ? args[0] : `/bin/${args[0]}`, args);
 }
@@ -202,6 +206,20 @@ const serially = (task) => {
   return next;
 };
 window.runCommand = (line) => serially(() => editor.submit(line));
+// Writes a file in the machine for what the page has in hand and no program does (a program's
+// source it is about to build, say). bash writes it, so its directory is the machine's.
+window.writeFile = (path, text) => serially(() => exec(
+  "/bin/bash",
+  ["bash", "-c", 'd=${1%/*}; [ "$d" = "$1" ] && d=.; mkdir -p "$d" && printf %s "$2" > "$1"', "write", path, text],
+));
+// The examples the page ships for ?go, in the guest's home before it says it is ready: a tab has
+// something to build before the reader has a way to write a file.
+if (go && bash) {
+  const { files } = await (await fetch("./examples/index.json")).json();
+  for (const [path, text] of Object.entries(files)) await window.writeFile(`${home}/examples/${path}`, text);
+  const names = [...new Set(Object.keys(files).map((path) => path.split("/")[0]))].join(", ");
+  term.writeln(`\x1b[2mGo examples in \x1b[0m\x1b[1m~/examples\x1b[0m\x1b[2m (${names}). Try \x1b[0m\x1b[1mcd ~/examples/hello && go run .\x1b[0m\r\n`);
+}
 const machine = {
   run: (line, action, extra) => serially(async () => {
     editor.busy = true;

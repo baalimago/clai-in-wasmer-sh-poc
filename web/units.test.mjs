@@ -6,12 +6,20 @@ import { test } from "node:test";
 import { Machine, describe, label, mask } from "./www/hood.js";
 import { notePath, renderMarkdown } from "./www/markdown.js";
 import { wrapWords } from "./www/doodles.js";
+import { isShellLine } from "./www/shell.js";
 import {
   accountOf, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, replyText, splitMessage, summariesIn, unknownSpeakers, withoutHeading,
 } from "./www/minutes.js";
 
 const exec = (pid, ppid, path, argv, t = 1) => ({ t, type: "exec", pid, ppid, path, argv });
+
+test("a line with a shell operator after its first word goes to bash whole", () => {
+  for (const line of ["cd /tmp/m && go build .", "export A=1; ls", "cd /x | wc -l", "cd /x 2>/dev/null", "cd /x > out"])
+    assert.ok(isShellLine(line), line);
+  for (const line of ["cd /tmp/m", "export A=1 B=2", "help", "cd 'a > b'", 'cd "a && b"', "cd a\\>b"])
+    assert.ok(!isShellLine(line), line);
+});
 
 test("a line's processes carry the tag of the bash that ran it", () => {
   const m = new Machine();

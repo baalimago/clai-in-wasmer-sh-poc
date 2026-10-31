@@ -1,0 +1,156 @@
+diff --git a/src/cmd/compile/internal/base/mapfile_mmap.go b/src/cmd/compile/internal/base/mapfile_mmap.go
+index aeead9d4..9cef33fe 100644
+--- a/src/cmd/compile/internal/base/mapfile_mmap.go
++++ b/src/cmd/compile/internal/base/mapfile_mmap.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build unix
++//go:build unix && !wasix
+ 
+ package base
+ 
+diff --git a/src/cmd/compile/internal/base/mapfile_read.go b/src/cmd/compile/internal/base/mapfile_read.go
+index 6ad2f84f..cea30813 100644
+--- a/src/cmd/compile/internal/base/mapfile_read.go
++++ b/src/cmd/compile/internal/base/mapfile_read.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build !unix
++//go:build !unix || wasix
+ 
+ package base
+ 
+diff --git a/src/cmd/go/internal/mmap/mmap_other.go b/src/cmd/go/internal/mmap/mmap_other.go
+index 4d2844fc..925f3b23 100644
+--- a/src/cmd/go/internal/mmap/mmap_other.go
++++ b/src/cmd/go/internal/mmap/mmap_other.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build (js && wasm) || wasip1 || plan9
++//go:build ((js && wasm) || wasip1 || plan9 || wasix) && !windows
+ 
+ package mmap
+ 
+diff --git a/src/cmd/go/internal/mmap/mmap_unix.go b/src/cmd/go/internal/mmap/mmap_unix.go
+index 5dce8723..51fc3b4b 100644
+--- a/src/cmd/go/internal/mmap/mmap_unix.go
++++ b/src/cmd/go/internal/mmap/mmap_unix.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build unix
++//go:build unix && !wasix
+ 
+ package mmap
+ 
+diff --git a/src/cmd/go/internal/telemetrystats/version_other.go b/src/cmd/go/internal/telemetrystats/version_other.go
+index efce5fcf..e1edc1e4 100644
+--- a/src/cmd/go/internal/telemetrystats/version_other.go
++++ b/src/cmd/go/internal/telemetrystats/version_other.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build !cmd_go_bootstrap && !unix && !windows
++//go:build !cmd_go_bootstrap && (!unix || wasix) && !windows
+ 
+ package telemetrystats
+ 
+diff --git a/src/cmd/go/internal/telemetrystats/version_unix.go b/src/cmd/go/internal/telemetrystats/version_unix.go
+index 517e7829..500624ba 100644
+--- a/src/cmd/go/internal/telemetrystats/version_unix.go
++++ b/src/cmd/go/internal/telemetrystats/version_unix.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build !cmd_go_bootstrap && unix
++//go:build !cmd_go_bootstrap && unix && !wasix
+ 
+ package telemetrystats
+ 
+diff --git a/src/cmd/internal/bio/buf_mmap.go b/src/cmd/internal/bio/buf_mmap.go
+index 9ce2b4d3..de8675fb 100644
+--- a/src/cmd/internal/bio/buf_mmap.go
++++ b/src/cmd/internal/bio/buf_mmap.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build unix
++//go:build unix && !wasix
+ 
+ package bio
+ 
+diff --git a/src/cmd/internal/bio/buf_nommap.go b/src/cmd/internal/bio/buf_nommap.go
+index 1d78a016..0b3a5173 100644
+--- a/src/cmd/internal/bio/buf_nommap.go
++++ b/src/cmd/internal/bio/buf_nommap.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build !unix
++//go:build !unix || wasix
+ 
+ package bio
+ 
+diff --git a/src/cmd/link/internal/ld/outbuf_mmap.go b/src/cmd/link/internal/ld/outbuf_mmap.go
+index e92a06dc..a1e916a2 100644
+--- a/src/cmd/link/internal/ld/outbuf_mmap.go
++++ b/src/cmd/link/internal/ld/outbuf_mmap.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build unix
++//go:build unix && !wasix
+ 
+ package ld
+ 
+diff --git a/src/cmd/link/internal/ld/outbuf_nommap.go b/src/cmd/link/internal/ld/outbuf_nommap.go
+index ee63ca18..c8054729 100644
+--- a/src/cmd/link/internal/ld/outbuf_nommap.go
++++ b/src/cmd/link/internal/ld/outbuf_nommap.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build !unix && !windows
++//go:build (!unix || wasix) && !windows
+ 
+ package ld
+ 
+diff --git a/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_other.go b/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_other.go
+index 610ab1a1..5904dee9 100644
+--- a/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_other.go
++++ b/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_other.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build (js && wasm) || wasip1 || plan9
++//go:build ((js && wasm) || wasip1 || plan9 || wasix) && !windows
+ 
+ package mmap
+ 
+diff --git a/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_unix.go b/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_unix.go
+index 72ad91d5..9aaa1a0e 100644
+--- a/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_unix.go
++++ b/src/cmd/vendor/golang.org/x/telemetry/internal/mmap/mmap_unix.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build unix
++//go:build unix && !wasix
+ 
+ package mmap
+ 

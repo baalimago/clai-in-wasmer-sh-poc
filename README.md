@@ -25,6 +25,10 @@ It also checks that the under-the-hood view sees what a line does, and runs the 
 Record button through to the agent's reply. `web/units.test.mjs` covers the page's logic that
 needs no browser.
 
+The Go toolchain is its own package: `make go-package` packs it (about two minutes, 171 MB),
+`make poc` and `make check` do that first, and only a page opened with `?go` fetches it. See
+[Go in the tab](#what-works) below.
+
 ## Minutes, and under the hood
 
 The page is **Minutes**, a meeting-notes app. **Peek under the hood** opens the machine it runs
@@ -89,6 +93,7 @@ browser tab
 └─ worker.js: a Web Worker running the WASIX v2 machine (web/src/lib.rs)
    ├─ console: the terminal, as the machine's /dev/hvc0, while a line runs
    ├─ /bin/clai: clai built with GOOS=wasix GOARCH=wasm
+   ├─ /go: the Go toolchain, a package the page mounts when it is opened with ?go
    ├─ /bin/npx, /bin/uvx: mcp/launcher.sh, which starts the MCP server ports below
    ├─ /bin/duckduckgo-mcp-server: mcp/duckduckgo-mcp-server, built like clai
    ├─ /bin/mcp-server-filesystem: mcp/mcp-server-filesystem, built like clai
@@ -155,6 +160,22 @@ the others up.
   with a made-up key got Anthropic's `401 invalid x-api-key` back.
 - Interactive prompts: `clai setup`, `clai chat list` and the like read from the terminal, with
   the kernel editing the line as you type it, and `^C` stops clai.
+- Go in the tab: open the page with `?go` and the machine mounts the Go toolchain at `/go`
+  (171 MB, 39.5 MB gzipped, from [research/go-toolchain](research/go-toolchain)). `go build`,
+  `go test` and `go vet` then run in the tab, the standard library and the module's own packages
+  included, and what they build runs on the same kernel:
+  `mkdir -p ~/hello && cd ~/hello && go mod init hello && printf 'package main\n\nimport "fmt"\n\nfunc main() { fmt.Println("hello from the tab") }\n' > main.go && go build -o hello . && ./hello`.
+  The first build compiles every package the program imports, in the tab: 77 to 87 s for a
+  program that imports `fmt`, `sort` and a package of its own. The cache is in the tab's home, so
+  the next build takes 0.7 s. The package is fetched on every page load, so `?go` is opt-in.
+  The page writes four examples into `~/examples` (from `web/www/examples`): `hello` (one file),
+  `words` (a module with its own package and a test), `report` (`encoding/json` and `sort`) and
+  `ticker` (goroutines). `cd ~/examples/hello && go run .` prints `hello from the tab`;
+  `cd ~/examples/words && go test ./...` prints `ok words/text`.
+  Modules outside the standard library work too: `go get rsc.io/quote` downloads three modules
+  through the page's WISP network in 15 s, then `go build` compiles them, 88 s cold. The port's
+  `go env` carries no `GOPROXY` or `GOSUMDB`, so `/usr/local/bin/go` sets both
+  (research/go-toolchain/go.sh); an `export` wins.
 - Starting programs: Go's `os/exec` starts them through wasixv2's `spawn` (`posix_spawn` in one
   call), with pipes, `Dir` and `Env`, and WASIX v1 programs start others as on wasmer's v1
   runtime, so clai's shell tools and `-add-shell-context` can run `sh -c`, rg, find and git.
@@ -280,6 +301,27 @@ servers clai starts afterwards. With a credential, pull, commit, log and sliving
 merges, conflict markers included, run in the page: two writers in it, against slivingdoc's
 reference storage server (`internal/httpstore/gatewaytest`) also in it, pull, commit and
 conflict as they do natively.
+
+## The Go toolchain on the same kernel
+
+The same machine runs the Go toolchain: `go build`, `go test` and `go vet` compile, link and run
+a module's standard library dependencies inside the kernel, and what they build runs there.
+`research/go-toolchain/` holds the measurement, the patch and the scripts
+([README](./research/go-toolchain/README.md)). The one root cause was `mmap`: the kernel hands
+out guest pages at the address the Go runtime's own `sbrk` heap starts at, which upstream avoids
+by having no `mmap` on `js/wasm` and `wasip1`. With the toolchain's six `mmap` users building
+without it:
+
+| Check, in the guest | Result |
+| --- | --- |
+| `go build .` (imports `fmt`, `os`, `sort`, `encoding/json`, a local package) | exit 0; 95 s with an empty `GOCACHE`, 6 s warm |
+| `go build -p 1 std` | exit 0; 376 s cold, 7.6 s warm |
+| `go test ./...` | `ok demo/word 1.765s`, test binary built and run in the guest |
+| `go vet ./...` | exit 0 |
+| `go build cmd/compile` | sees the module through `cmd/go` and stops in `cmd/compile/internal/ssagen`, where the guest compiler traps |
+
+The page mounts this toolchain at `/go` when it is opened with `?go`: 39.5 MB gzipped, paid on
+every page load, and the first build of a module costs the standard library's 80 s in the tab.
 
 ## What doesn't work yet
 

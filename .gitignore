@@ -6,4 +6,6 @@
 /web/www/ca-certificates.crt
 /web/www/packages/
 /web/www/bin/
+/web/www/go/
+/web/www/examples/index.json
 /.build/
