@@ -10,7 +10,7 @@
 [submodule "components/wasmer"]
 	path = components/wasmer
 	url = https://github.com/baalimago/wasmer.git
-	branch = claude/project-thread-1nkwvt
+	branch = claude/project-thread-41w4i6
 	shallow = true
 [submodule "components/clai"]
 	path = components/clai

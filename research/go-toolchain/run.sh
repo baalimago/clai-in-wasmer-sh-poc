@@ -18,7 +18,7 @@ cwd=${CWD:-/work}
 mkdir -p "$work/state/home" "$work/state/cache" "$work/state/tmp"
 exec "$wasmer" run --no-tty \
   --volume "$groot:/go" --volume "$work/state:/state" --volume "$PWD:/work" --cwd "$cwd" \
-  --env GOROOT=/go --env GOCACHE=/state/cache \
+  --env GOROOT=/go --env GOCACHE="${CACHE:-/state/cache}" \
   --env GOFLAGS=-buildvcs=false --env GOTOOLCHAIN=local --env CGO_ENABLED=0 \
   --env GOOS=wasix --env GOARCH=wasm --env TMPDIR=/state/tmp \
   "$bin" -- "$@"
