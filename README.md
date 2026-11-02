@@ -161,13 +161,15 @@ the others up.
 - Interactive prompts: `clai setup`, `clai chat list` and the like read from the terminal, with
   the kernel editing the line as you type it, and `^C` stops clai.
 - Go in the tab: open the page with `?go` and the machine mounts the Go toolchain at `/go`
-  (171 MB, 39.5 MB gzipped, from [research/go-toolchain](research/go-toolchain)). `go build`,
+  (305 MB, 70 MB gzipped, from [research/go-toolchain](research/go-toolchain)). `go build`,
   `go test` and `go vet` then run in the tab, the standard library and the module's own packages
   included, and what they build runs on the same kernel:
   `mkdir -p ~/hello && cd ~/hello && go mod init hello && printf 'package main\n\nimport "fmt"\n\nfunc main() { fmt.Println("hello from the tab") }\n' > main.go && go build -o hello . && ./hello`.
-  The first build compiles every package the program imports, in the tab: 77 to 87 s for a
-  program that imports `fmt`, `sort` and a package of its own. The cache is in the tab's home, so
-  the next build takes 0.7 s. The package is fetched on every page load, so `?go` is opt-in.
+  The package carries the standard library compiled, as the build cache at `/go/cache`, so the
+  first build compiles only the module's own packages and its dependencies: `go run` of the hello
+  example takes 1.1 s, and clai (vendored) builds in 103 s, where an empty cache took 335 s (18.5 s
+  natively on 4 cores). `go.sh` also turns the collector off below 1 GiB, which saves a quarter of
+  the compiler's time on wasm. The next build takes about 1.4 s. The package is fetched on every page load, so `?go` is opt-in.
   The page writes four examples into `~/examples` (from `web/www/examples`): `hello` (one file),
   `words` (a module with its own package and a test), `report` (`encoding/json` and `sort`) and
   `ticker` (goroutines). `cd ~/examples/hello && go run .` prints `hello from the tab`;
