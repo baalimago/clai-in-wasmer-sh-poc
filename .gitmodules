@@ -1,24 +1,25 @@
 [submodule "components/go"]
 	path = components/go
 	url = https://github.com/baalimago/go.git
-	branch = claude/project-thread-77lz17
+	branch = poc-clai-via-wasix-wasmersh
 	shallow = true
 [submodule "components/wasixv2-abi"]
 	path = components/wasixv2-abi
 	url = https://github.com/baalimago/wasixv2-abi.git
-	branch = claude/project-thread-1nkwvt
+	branch = poc-clai-via-wasix-wasmersh
 [submodule "components/wasmer"]
 	path = components/wasmer
 	url = https://github.com/baalimago/wasmer.git
-	branch = claude/project-thread-1nkwvt
+	branch = poc-clai-via-wasix-wasmersh
 	shallow = true
 [submodule "components/clai"]
 	path = components/clai
 	url = https://github.com/baalimago/clai.git
-	branch = main
+	branch = poc-clai-via-wasix-wasmersh
 [submodule "components/slivingdoc"]
 	path = components/slivingdoc
 	url = https://github.com/baalimago/slivingdoc.git
+	branch = poc-clai-via-wasix-wasmersh
 	shallow = true
 [submodule "components/libgit2"]
 	path = components/libgit2
