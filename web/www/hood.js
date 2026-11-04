@@ -135,6 +135,17 @@ export class Machine {
         this.note(e, "net", `${proc?.name ?? e.pid} connects to ${name}`, proc);
         break;
       }
+      // One request the host carried with its own HTTP client: the page's fetch, and its TLS.
+      case "http": {
+        this.fds.set(`${e.pid}:${e.fd}`, { kind: "net", name: e.host });
+        const proc = this.procs.get(e.pid);
+        const r = this.resource("net", e.host, proc);
+        r.connects += 1;
+        r.out += e.bytes;
+        r.last = e.t;
+        this.note(e, "net", `${proc?.name ?? e.pid} asks ${e.host} ${e.method} · the host's own TLS`, proc);
+        break;
+      }
       // A descriptor that is closed, or now refers to something unknown, is null: a child that
       // changed it does not get its parent's when it execs.
       case "close":

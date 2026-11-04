@@ -287,14 +287,17 @@ name = "clai-web"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "httpwire",
  "js-sys",
  "wasixv2",
+ "wasixv2-abi",
  "wasixv2-vfs",
  "wasixv2-vfs-package",
- "wasixv2-vnet-wisp",
+ "wasixv2-vnet",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasmer",
+ "web-sys",
  "webc",
 ]
 
@@ -902,6 +905,10 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "httpwire"
+version = "0.0.0"
 
 [[package]]
 name = "hybrid-array"
@@ -2539,6 +2546,7 @@ version = "0.0.0"
 dependencies = [
  "tracing",
  "wasixv2-abi",
+ "wasixv2-host",
  "wasixv2-syscalls",
 ]
 
@@ -2609,18 +2617,6 @@ name = "wasixv2-vnet-switch"
 version = "0.0.0"
 dependencies = [
  "wasixv2-vnet",
-]
-
-[[package]]
-name = "wasixv2-vnet-wisp"
-version = "0.0.0"
-dependencies = [
- "js-sys",
- "thiserror",
- "wasixv2-abi",
- "wasixv2-vnet",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]

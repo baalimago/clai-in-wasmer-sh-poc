@@ -15,6 +15,7 @@
     <span class="chip" id="machine-chip">wasmer.sh · WASIX v2 kernel: booting</span>
     <span class="chip" id="notebook-chip">slivingdoc: not connected</span>
     <span class="chip" id="key-chip">OpenAI key: not set</span>
+    <button id="change-key" class="inline" hidden>Change key</button>
     <button id="peek" class="peek" aria-expanded="false" aria-controls="hood">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
       Peek under the hood
@@ -34,6 +35,11 @@
         <div id="notebook-status">Notebook: on this machine</div>
         <code id="notebook-path">~/notebook/meetings/</code>
         <button id="connect" class="inline">Connect slivingdoc</button>
+        <button id="signout" class="inline" hidden>Sign out</button>
+        <p id="signout-note" class="quiet" hidden>
+          <span id="signout-said"></span>
+          <a id="tokens-link" href="https://www.slivingdoc.dev/tokens" target="_blank" rel="noopener">Revoke the key on slivingdoc.dev</a>
+        </p>
       </div>
     </nav>
 
@@ -41,7 +47,7 @@
       <div id="setup" class="setup">
         <form id="key-form" class="card">
           <label for="key-input"><strong>OpenAI API key</strong></label>
-          <p class="quiet">The agent transcribes with speaker labels and writes the summary with it. It stays in this tab and reaches only the agent, as <code>OPENAI_API_KEY</code>.</p>
+          <p class="quiet">The agent transcribes with speaker labels and writes the summary with it. This browser keeps it for this site, and it reaches only the agent, as <code>OPENAI_API_KEY</code>.</p>
           <p class="quiet">Create a key just for this on <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI's API keys page</a>: a restricted key in a project with a small budget, which you delete when you are done, is the safest.</p>
           <div class="row">
             <input id="key-input" type="password" autocomplete="off" placeholder="sk-…">

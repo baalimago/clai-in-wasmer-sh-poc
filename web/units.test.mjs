@@ -8,8 +8,9 @@ import { notePath, renderMarkdown } from "./www/markdown.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import {
-  accountOf, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
-  parseSpaces, profilePage, replyText, splitMessage, summariesIn, unknownSpeakers, withoutHeading,
+  DEFAULTS, accountOf, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
+  parseSpaces, profilePage, replyText, signoutResult, splitMessage, summariesIn, unknownSpeakers,
+  withoutHeading,
 } from "./www/minutes.js";
 
 const exec = (pid, ppid, path, argv, t = 1) => ({ t, type: "exec", pid, ppid, path, argv });
@@ -167,6 +168,31 @@ test("slivingdoc's login gives its sign-in page and code, then who approved it",
   assert.equal(accountOf("not json"), null);
 });
 
+test("a sign-out forgets a login only once its key is revoked", () => {
+  assert.deepEqual(signoutResult({ account: "ada@example.com", tokenOnly: false, status: 0 }), {
+    revoked: true,
+    message: "Signed out of ada@example.com.",
+    page: null,
+  });
+  const failed = signoutResult({
+    account: "ada@example.com",
+    tokenOnly: false,
+    status: 1,
+    said: "logout: the login key could not be revoked and stays stored; retry",
+  });
+  assert.equal(failed.revoked, false);
+  assert.match(failed.message, /^Signing out of ada@example\.com failed: logout: the login key could not be revoked/);
+  assert.equal(failed.page, "https://www.slivingdoc.dev/tokens");
+});
+
+test("a token-only sign-out says the key outlives the tab", () => {
+  const result = signoutResult({ account: null, tokenOnly: true, status: 0 });
+
+  assert.equal(result.revoked, true);
+  assert.match(result.message, /stays valid until it is revoked on slivingdoc\.dev\.$/);
+  assert.equal(result.page, "https://www.slivingdoc.dev/tokens");
+});
+
 test("a login's spaces, and its default one", () => {
   const none = "HOSTED  https://api.slivingdoc.dev  ada@example.com\n  main  write  ada@example.com\n" +
     "  notes (meetings)  read  ada@example.com\nNo default space; run 'slivingdoc space <name>' to choose one.\n";
@@ -180,6 +206,12 @@ test("a hub profile is trusted before it runs, and its page says what it runs", 
   assert.equal(isRemote("/tmp/meeting.json"), false);
   assert.equal(profilePage("cchub:baalimago/meeting-transcriber@13"), "https://www.clai.chat/hub/baalimago/meeting-transcriber/");
   assert.equal(profilePage("gh:a/b/c.json@v1"), null);
+});
+
+test("the agent the app runs is the hub's latest, with no version pin", () => {
+  assert.equal(DEFAULTS.profile, "cchub:baalimago/meeting-transcriber");
+  assert.equal(isRemote(DEFAULTS.profile), true);
+  assert.equal(profilePage(DEFAULTS.profile), "https://www.clai.chat/hub/baalimago/meeting-transcriber/");
 });
 
 test("a message names its topic on its first line, and its body stays bytes", () => {

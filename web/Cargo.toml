@@ -1,5 +1,7 @@
-# Its own workspace: it only builds for the browser, against the wasmer submodule.
+# Its own workspace: it only builds for the browser, against the wasmer submodule. `httpwire` holds
+# the HTTP/1.1 the fetch backend carries, which tests on the host because it has no wasm in it.
 [workspace]
+members = ["httpwire"]
 
 [package]
 name = "clai-web"
@@ -14,12 +16,28 @@ crate-type = ["cdylib"]
 
 [dependencies]
 async-trait = "0.1"
+httpwire = { path = "httpwire" }
 js-sys = "0.3"
 wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["js", "web", "wasix1"] }
+wasixv2-abi = { path = "../components/wasmer/lib/wasixv2/abi" }
+wasixv2-vnet = { path = "../components/wasmer/lib/wasixv2/vnet" }
 wasixv2-vfs = { path = "../components/wasmer/lib/wasixv2/vfs" }
 wasixv2-vfs-package = { path = "../components/wasmer/lib/wasixv2/vfs-package" }
-wasixv2-vnet-wisp = { path = "../components/wasmer/lib/wasixv2/vnet-wisp", features = ["web"] }
 wasmer = { path = "../components/wasmer/lib/api", default-features = false, features = ["js-default"] }
 wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "AbortController",
+    "AbortSignal",
+    "Headers",
+    "ReadableStream",
+    "ReadableStreamDefaultReader",
+    "Request",
+    "RequestCache",
+    "RequestCredentials",
+    "RequestInit",
+    "RequestMode",
+    "RequestRedirect",
+    "Response",
+] }
 webc = { version = "=12.0.1", default-features = false, features = ["v3"] }

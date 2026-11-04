@@ -24,7 +24,7 @@ const SHELL = [
   { line: "pwd", prints: "/usr/bin" },
 ];
 
-// The Go toolchain the page mounts at /go when it is opened with ?go: it compiles a program that
+// The Go toolchain the page mounts at /go: it compiles a program that
 // imports the standard library and a package of the module's own, links it, and the machine then
 // runs what it built. The first build is the slow one: an empty GOCACHE compiles every package
 // the program imports, on the kernel, in the tab.
@@ -174,6 +174,20 @@ const INTERACTIVE = [
   { name: "^C", keys: ["Control+C"], status: 128 + 2 },
 ];
 
+// slivingdoc's sign-in and sign-out against the stub site on the page's own origin (server.mjs):
+// every request of the CLI's is one host call, and the page's fetch makes it, so a guest with no
+// TLS of its own logs in and out (2026-11-04 research/http-host-call/PROMPT.md).
+const SIGNIN = (port) => [
+  {
+    line: `SLIVINGDOC_SITE=http://localhost:${port} slivingdoc login --no-browser --force </dev/null 2>&1 | cat`,
+    status: 0,
+    prints: "check-notes",
+  },
+  { line: "slivingdoc space </dev/null 2>&1 | cat", status: 0, prints: "check-notes" },
+  { line: "slivingdoc logout </dev/null 2>&1 | cat", status: 0, prints: "Logged out of" },
+  { line: "cat ~/.config/slivingdoc/credentials.json", status: 0, prints: '"logins": []' },
+];
+
 const server = await startServer();
 const browser = await chromium.launch({
   args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
@@ -202,7 +216,7 @@ try {
     };
   });
   page.on("pageerror", (error) => console.error("page error:", error.message));
-  await page.goto(`http://localhost:${server.address().port}/?go`);
+  await page.goto(`http://localhost:${server.address().port}/`);
   await page.waitForSelector("body[data-ready]", { timeout: 120_000 });
   for (const { line, status: want } of COMMANDS) {
     const before = await page.evaluate(() => window.terminalText());
@@ -270,7 +284,7 @@ try {
       process.exitCode = 1;
     }
   }
-  for (const { line, status: want, prints } of bash ? [...MCP, ...AUDIO] : []) {
+  for (const { line, status: want, prints } of bash ? [...MCP, ...AUDIO, ...SIGNIN(server.address().port)] : []) {
     const before = await page.evaluate(() => window.terminalText());
     const status = await page.evaluate((line) => window.runCommand(line), line);
     const printed = (await page.evaluate(() => window.terminalText())).slice(before.length);
@@ -302,6 +316,17 @@ try {
     await page.evaluate((line) => window.runCommand(line), NOTEBOOK);
     await page.fill("#key-input", "sk-test-not-a-key");
     await page.click("#key-form button");
+    // The key stays in this browser for this site, so a return to it needs no paste.
+    const kept = await page.evaluate(() => [localStorage.getItem("minutes.openai-key"), window.minutes.env.get("OPENAI_API_KEY")]);
+    if (kept[0] !== "sk-test-not-a-key" || kept[1] !== "sk-test-not-a-key") {
+      console.error(`\nFAIL: the browser did not keep the OpenAI key (localStorage ${kept[0]}, env ${kept[1]})`);
+      process.exitCode = 1;
+    }
+    const changeable = await page.isVisible("#change-key");
+    if (!changeable) {
+      console.error("\nFAIL: no way to change the key the browser kept");
+      process.exitCode = 1;
+    }
     await page.fill("#title", "Daily sync");
     await page.click("#record-form button");
     const stop = await page
@@ -348,6 +373,38 @@ try {
     console.log(`Minutes, a meeting: ${JSON.stringify(meeting)}`);
     if (!opened || meeting.title !== "Design review" || meeting.item !== "Ship the peek") {
       console.error("\nFAIL: the notebook's meeting did not open as its rendered summary and transcript");
+      process.exitCode = 1;
+    }
+  }
+  // Minutes' sign-out of a session that pasted a token: the app forgets the token, says the key
+  // itself stays valid, and the chip returns to the notebook in this tab (2026-11-04
+  // research/http-host-call/PROMPT.md). A stored login's sign-out runs `slivingdoc logout`, which
+  // the rows above prove on its own.
+  if (bash) {
+    // The stub site stands in for the hosted endpoint too, so the pull a token asks for stays on
+    // this machine.
+    await page.evaluate(
+      (endpoint) => window.minutes.env.set("SLIVINGDOC_ENDPOINT", endpoint),
+      `http://localhost:${server.address().port}`,
+    );
+    await page.evaluate(() => {
+      if (document.querySelector("#notebook-card").hidden) document.querySelector("#connect").click();
+    });
+    await page.fill("#token-input", "sld_check_token_only");
+    await page.click("#notebook-form button");
+    const offered = await page
+      .waitForSelector("#signout:not([hidden])", { timeout: 30_000 })
+      .then(() => true, () => false);
+    await page.click("#signout");
+    const local = await page
+      .waitForFunction(() => document.querySelector("#notebook-chip").textContent === "slivingdoc: local notebook", null, {
+        timeout: 30_000,
+      })
+      .then(() => true, () => false);
+    const said = await page.evaluate(() => document.querySelector("#signout-said").textContent);
+    console.log(`Minutes, Sign out: ${JSON.stringify({ offered, local, said })}`);
+    if (!offered || !local || !said.includes("stays valid")) {
+      console.error("\nFAIL: Minutes did not offer Sign out, forget the token, or say the key stays valid");
       process.exitCode = 1;
     }
   }

@@ -1,9 +1,14 @@
-//! One WASIX v2 machine per page, with its network behind a WISP server and the page's terminal
-//! as its console. Its `/bin` holds clai and the commands of Wasmer registry packages (WASIX v1
-//! programs, which the kernel's v1 compatibility ABI runs). The page runs programs on it one
-//! after another, so files they write (clai's config in `~/.config`) stay between runs.
+//! One WASIX v2 machine per page, its network the page's own `fetch` calls ([`fetch`]), and the
+//! page's terminal as its console. Its `/bin` holds clai and the commands of Wasmer registry
+//! packages (WASIX v1 programs, which the kernel's v1 compatibility ABI runs). The page runs
+//! programs on it one after another, so files they write (clai's config in `~/.config`) stay
+//! between runs.
 
 mod audio;
+mod fetch;
+mod host;
+mod jshttp;
+mod names;
 mod observe;
 mod outbox;
 mod packages;
@@ -17,7 +22,7 @@ use std::task::{Context, Poll, Waker};
 use js_sys::{Promise, Uint8Array};
 use wasixv2::{
     ByteSink, ByteSource, Console, Engine, Image, ImageId, LoadError, Loader, LocalFuture, Machine,
-    MachineBuilder, OwnedBuffer, ProcessConfig, RunError, Signaller, Stdio, WebHost, WindowSize,
+    MachineBuilder, OwnedBuffer, ProcessConfig, RunError, Signaller, Stdio, WindowSize,
 };
 use wasixv2_vfs_package::PackageFs;
 use wasm_bindgen::prelude::*;
@@ -44,7 +49,8 @@ pub struct Shell {
     output: Output,
     audio: Arc<audio::AudioFs>,
     outbox: Arc<outbox::Outbox>,
-    recorder: Arc<observe::Recorder<wasixv2_vnet_wisp::WispBackend>>,
+    recorder: Arc<observe::Recorder<fetch::FetchBackend>>,
+    net: fetch::FetchBackend,
     notes: Vec<String>,
 }
 
@@ -53,7 +59,7 @@ pub struct Shell {
 /// with [`Shell::add_audio_input`].
 const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab", "Monitor of Shared tab or screen (browser)")];
 
-/// Boots the machine; its traffic leaves through the WISP server at `wisp_url`, its TLS
+/// Boots the machine; its traffic leaves through the page's `fetch` calls ([`fetch`]), whose TLS
 /// clients trust `ca_certificates`, a PEM bundle at `/etc/ssl/certs/ca-certificates.crt`, where
 /// Debian keeps it and Go's `crypto/x509` looks first, and its console is a terminal of `rows`
 /// by `cols` that [`Shell::type_input`] types into. `/bin` holds `programs` (clai, the MCP
@@ -66,7 +72,6 @@ const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab"
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub async fn boot(
-    wisp_url: String,
     ca_certificates: Vec<u8>,
     names: Vec<String>,
     programs: Vec<Uint8Array>,
@@ -76,8 +81,7 @@ pub async fn boot(
     rows: u16,
     cols: u16,
 ) -> Result<Shell, JsError> {
-    let backend = wasixv2_vnet_wisp::web::connect(&wisp_url)
-        .map_err(|e| JsError::new(&format!("cannot open {wisp_url}: {e:?}")))?;
+    let backend = fetch::FetchBackend::new();
     let input = Arc::new(Input::default());
     let output = Output::default();
     let console = Console {
@@ -86,8 +90,8 @@ pub async fn boot(
         size: window_size(rows, cols),
     };
     let recorder = Arc::new(observe::Recorder::new(backend.clone(), js_sys::Date::now));
-    let mut machine = MachineBuilder::new(Arc::new(WebHost::new()))
-        .backend(Arc::new(backend))
+    let mut machine = MachineBuilder::new(Arc::new(host::PageHost::new()))
+        .backend(Arc::new(backend.clone()))
         .observer(recorder.clone())
         .console(console, [true; 3])
         .loader(Arc::new(Cache::default()))
@@ -157,6 +161,7 @@ pub async fn boot(
         audio,
         outbox,
         recorder,
+        net: backend,
         signaller: machine.signaller(),
         machine: Rc::new(machine),
         input,
@@ -241,6 +246,12 @@ impl Shell {
     /// The messages written to `/run/page/out` since the last call (see [`outbox`]).
     pub fn take_outbox(&self) -> Vec<Uint8Array> {
         self.outbox.take().iter().map(|m| Uint8Array::from(m.as_slice())).collect()
+    }
+
+    /// What the page's network could not carry since the last call: the browser's reason, or a
+    /// guest that wanted a socket the browser will not make.
+    pub fn take_network_notes(&self) -> Vec<String> {
+        self.net.take_notes()
     }
 
     /// The terminal is now `rows` by `cols`; the console's foreground group gets SIGWINCH.

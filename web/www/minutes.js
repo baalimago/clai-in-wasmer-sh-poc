@@ -21,7 +21,8 @@ export const NOTEBOOK_FORMAT =
   "asks the user who they are.";
 
 export const DEFAULTS = {
-  profile: "cchub:baalimago/meeting-transcriber@13",
+  // No version tag: the hub serves the profile's latest release.
+  profile: "cchub:baalimago/meeting-transcriber",
   flags: "",
   env: "",
   notebook: "~/notebook",
@@ -142,6 +143,28 @@ export function accountOf(credentials) {
   return found;
 }
 
+const TOKENS_PAGE = "https://www.slivingdoc.dev/tokens";
+
+// What a sign-out leaves behind, from what it signed out of and how `slivingdoc logout` ended:
+// the login is forgotten only once the site revoked the key, so a live key is never orphaned
+// silently (2026-11-04 research/http-host-call/PROMPT.md).
+export function signoutResult({ account, tokenOnly, status, said }) {
+  if (status !== 0) {
+    return {
+      revoked: false,
+      message: `Signing out of ${account ?? "slivingdoc"} failed: ${said || `exit ${status}`}. The login is kept, so it can be revoked.`,
+      page: TOKENS_PAGE,
+    };
+  }
+  return {
+    revoked: true,
+    message: tokenOnly
+      ? "Signed out of the token. The key itself stays valid until it is revoked on slivingdoc.dev."
+      : `Signed out of ${account ?? "slivingdoc"}.`,
+    page: tokenOnly ? TOKENS_PAGE : null,
+  };
+}
+
 // The spaces `slivingdoc space` lists for the stored login, and its default space, if any
 // (marked with a *).
 export function parseSpaces(text) {
@@ -197,6 +220,7 @@ const PART = 15_000_000;
 const CREDENTIALS = "~/.config/slivingdoc/credentials.json";
 const STORED_LOGIN = "minutes.slivingdoc-credentials";
 const STORED_TRUST = "minutes.clai-trust";
+const STORED_KEY = "minutes.openai-key";
 const TRUST = '"$(clai confdir)/trust.json"';
 
 const transcriptOf = (summary) => summary.replace("meetings/summaries/", "meetings/transcripts/");
@@ -205,7 +229,8 @@ export class Minutes {
   // `machine.run(line, action)` runs a line on the machine and resolves to its status;
   // `machine.type(text)` types on its console. `hood` shows what a click ran, `model` is what
   // the machine did, `env` the variables every run gets, `audio` the inputs being captured.
-  // `store` keeps the slivingdoc login in the browser: get(key), set(key, value).
+  // `store` keeps the slivingdoc login and the OpenAI key in the browser: get(key),
+  // set(key, value), remove(key).
   constructor({ root, machine, hood, model, env, audio, store, recordings, config }) {
     this.root = root;
     this.machine = machine;
@@ -217,6 +242,8 @@ export class Minutes {
     this.recordings = recordings;
     this.streams = new Map();
     this.login = null;
+    this.signingOut = false;
+    this.signoutNote = null;
     this.trusted = null;
     this.spaces = null;
     this.connecting = true;
@@ -235,12 +262,13 @@ export class Minutes {
 
   bind() {
     const $ = this.$;
-    const secret = (form, input, name) => {
+    const secret = (form, input, name, kept) => {
       $(form).onsubmit = (event) => {
         event.preventDefault();
         const value = $(input).value.trim();
         if (!value) return;
         this.env.set(name, value);
+        if (kept) this.store.set(kept, value);
         $(input).value = "";
         this.render();
         if (name === "SLIVINGDOC_TOKEN") {
@@ -249,10 +277,16 @@ export class Minutes {
         }
       };
     };
-    secret("#key-form", "#key-input", "OPENAI_API_KEY");
+    secret("#key-form", "#key-input", "OPENAI_API_KEY", STORED_KEY);
     secret("#notebook-form", "#token-input", "SLIVINGDOC_TOKEN");
+    $("#change-key").onclick = () => {
+      this.env.delete("OPENAI_API_KEY");
+      this.store.remove(STORED_KEY);
+      this.render();
+    };
     $("#new").onclick = () => this.show("record");
     $("#signin").onclick = () => this.signin(window.open("about:blank", "_blank"));
+    $("#signout").onclick = () => this.signout();
     $("#not-now").onclick = () => {
       this.connecting = false;
       this.render();
@@ -299,6 +333,9 @@ export class Minutes {
 
   // Puts back the slivingdoc login this browser kept, then lists the notebook.
   async start() {
+    // The key this browser kept, so a return to the site needs no paste.
+    const key = this.store.get(STORED_KEY);
+    if (key) this.env.set("OPENAI_API_KEY", key);
     const credentials = this.store.get(STORED_LOGIN);
     if (credentials) {
       const line = `mkdir -p ~/.config/slivingdoc && printf '%s' "$SLIVINGDOC_CREDENTIALS" > ${CREDENTIALS}`;
@@ -396,9 +433,43 @@ export class Minutes {
     this.login = accountOf(body) ?? "signed in";
     this.signing = null;
     this.connecting = false;
+    this.signoutNote = null;
     this.render();
     await this.checkSpace();
     await this.refresh();
+  }
+
+  // Signs out: `slivingdoc logout` revokes the login's key at the site and removes the login, and
+  // only then does the app forget what it kept. A token-only session has no stored login, and its
+  // key stays valid until it is revoked on slivingdoc.dev.
+  async signout() {
+    const account = this.login;
+    const tokenOnly = !this.store.get(STORED_LOGIN);
+    this.signingOut = true;
+    this.signoutNote = null;
+    this.render();
+    let { status, body } = { status: 0, body: "" };
+    if (!tokenOnly) {
+      const line = "{ echo logout; slivingdoc logout </dev/null 2>&1; } > /run/page/out";
+      ({ status, body } = await this.run("Sign out", line, { topic: "logout" }));
+    }
+    const said = (body ?? "").split("\n").map((line) => line.trim()).filter(Boolean).at(-1);
+    const result = signoutResult({ account, tokenOnly, status, said });
+    if (result.revoked) {
+      this.store.remove(STORED_LOGIN);
+      this.env.delete("SLIVINGDOC_TOKEN");
+      this.login = null;
+      this.spaces = null;
+      this.connecting = true;
+      this.meetings = [];
+      this.current = null;
+      this.historyItems = null;
+      this.signing = null;
+    }
+    this.signingOut = false;
+    this.signoutNote = result;
+    this.status(result.message);
+    this.show("record");
   }
 
   // A message from /run/page/out: its first line says what it answers.
@@ -682,6 +753,7 @@ export class Minutes {
     const $ = this.$;
     const keyed = this.env.has("OPENAI_API_KEY");
     $("#key-chip").textContent = keyed ? `OpenAI key: ${mask(`KEY=${this.env.get("OPENAI_API_KEY")}`).slice(4)}` : "OpenAI key: not set";
+    $("#change-key").hidden = !keyed;
     $("#notebook-chip").textContent = this.login ? `slivingdoc: ${this.login}` : this.connected ? "slivingdoc: connected" : "slivingdoc: local notebook";
     $("#key-form").hidden = keyed;
     $("#notebook-card").hidden = this.connected || !this.connecting;
@@ -694,6 +766,14 @@ export class Minutes {
       if (this.signing.url) $("#signin-link").href = this.signing.url;
     }
     $("#connect").hidden = this.connected;
+    $("#signout").hidden = !this.connected;
+    $("#signout").disabled = this.signingOut;
+    $("#signout-note").hidden = !this.signoutNote;
+    if (this.signoutNote) {
+      $("#signout-said").textContent = this.signoutNote.message;
+      $("#tokens-link").hidden = !this.signoutNote.page;
+      if (this.signoutNote.page) $("#tokens-link").href = this.signoutNote.page;
+    }
     $("#space-form").hidden = !this.spaces;
     if (this.spaces && $("#space").options.length !== this.spaces.length) {
       $("#space").replaceChildren(...this.spaces.map((name) => new Option(name, name)));

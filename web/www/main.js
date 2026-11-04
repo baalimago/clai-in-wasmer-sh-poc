@@ -52,9 +52,7 @@ window.hoodModel = model;
 term.writeln("Booting a WASIX v2 machine…");
 const worker = new Worker("./worker.js", { type: "module" });
 const size = () => ({ rows: term.rows, cols: term.cols });
-// `?go` adds the Go toolchain to the machine (see worker.js), which costs a 40 MB download.
-const go = new URLSearchParams(location.search).has("go");
-worker.postMessage({ size: size(), go });
+worker.postMessage({ size: size() });
 let finished = null;
 let minutes = null;
 // The loudest of each input's latest samples, for the waveform.
@@ -111,7 +109,6 @@ const { bash, home } = await new Promise((ready) => {
 term.writeln(bash
   ? "Ready. Try \x1b[1mls /bin\x1b[0m, \x1b[1mclai h\x1b[0m, or \x1b[1mhelp\x1b[0m.\r\n"
   : "Ready, without bash: run \x1b[1mmake packages\x1b[0m for it. Try \x1b[1mclai h\x1b[0m.\r\n");
-if (!go) term.writeln("\x1b[2mOpen this page with \x1b[1m?go\x1b[0m\x1b[2m and the machine mounts the Go toolchain at /go.\x1b[0m\r\n");
 document.querySelector("#machine-chip").textContent = "wasmer.sh · WASIX v2 kernel: running";
 term.onResize(() => worker.postMessage({ size: size() }));
 
@@ -212,9 +209,9 @@ window.writeFile = (path, text) => serially(() => exec(
   "/bin/bash",
   ["bash", "-c", 'd=${1%/*}; [ "$d" = "$1" ] && d=.; mkdir -p "$d" && printf %s "$2" > "$1"', "write", path, text],
 ));
-// The examples the page ships for ?go, in the guest's home before it says it is ready: a tab has
+// The examples the page ships for Go, in the guest's home before it says it is ready: a tab has
 // something to build before the reader has a way to write a file.
-if (go && bash) {
+if (bash) {
   const { files } = await (await fetch("./examples/index.json")).json();
   for (const [path, text] of Object.entries(files)) await window.writeFile(`${home}/examples/${path}`, text);
   const names = [...new Set(Object.keys(files).map((path) => path.split("/")[0]))].join(", ");
@@ -254,6 +251,13 @@ minutes = new Minutes({
         localStorage.setItem(key, value);
       } catch {
         // Kept for this tab only.
+      }
+    },
+    remove: (key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // Nothing was kept to forget.
       }
     },
   },

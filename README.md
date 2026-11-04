@@ -26,7 +26,7 @@ Record button through to the agent's reply. `web/units.test.mjs` covers the page
 needs no browser.
 
 The Go toolchain is its own package: `make go-package` packs it (about two minutes, 171 MB),
-`make poc` and `make check` do that first, and only a page opened with `?go` fetches it. See
+`make poc` and `make check` do that first, and the page fetches it at every boot. See
 [Go in the tab](#what-works) below.
 
 ## Minutes, and under the hood
@@ -37,12 +37,13 @@ Nothing the app does needs the peek; its buttons run programs on the machine dir
 
 | Button | Runs |
 | --- | --- |
-| Start recording | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber@13 query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook` |
+| Start recording | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook` |
 | Stop and summarize | types Enter on the console, which ends clai's `audio_record` |
 | Share a tab | asks the browser for the tab whose audio the recording takes (shown while the agent records a tab) |
 | Send (answer the agent) | the same `clai`, with `-re` and the answer as the query |
 | A meeting | `cat` of its summary and transcript, rendered as markdown |
 | history | `slivingdoc log` |
+| Sign out | `slivingdoc logout`: the site revokes the key and the login is forgotten, here and on the machine |
 
 The agent is the whole transcriber: it records (its `audio_record` tool starts ffmpeg), transcribes
 with speaker labels (`gpt-4o-transcribe-diarize`, so the app asks for `OPENAI_API_KEY`), and files
@@ -52,7 +53,9 @@ slivingdoc token the notes stay in `~/notebook` in the tab; with one (from slivi
 Connect slivingdoc), every run gets `SLIVINGDOC_TOKEN`, so the agent's slivingdoc server writes to
 the hosted notebook and the list pulls it first. When the agent is done, the meeting it filed opens
 as Summary and Transcript cards; what it says shows as markdown (`marked`, with raw HTML shown as
-text and links to the notebook's files opening them in the app).
+text and links to the notebook's files opening them in the app). Sign out revokes the key at the
+site before the app forgets it; when that fails the login stays, with the CLI's last line and the
+Tokens page to revoke it by hand, because a live key must not be orphaned silently.
 
 Programs send what the app reads to `/run/page/out`, a write-only file whose every write, once
 closed, reaches the page as one message whose first line names it (`reply`, `meetings`,
@@ -63,7 +66,7 @@ The peek is built from the kernel itself: the WASIX v2 trace layer
 close, rename, mkdir and unlink that succeeds, and the bytes through each descriptor, for every
 process, WASIX v1 programs such as bash and ffmpeg included. `web/src/observe.rs` keeps them
 until the page takes them, as JSON, adding up the bytes a descriptor moves between two other
-events and naming the host behind each address the WISP network handed out. Each line runs as
+events and naming the host behind each address the machine's resolver handed out. Each line runs as
 `bash -c LINE TAG`, so a process's tag, from its `$0` and inherited by what it starts, says which
 click or terminal line it belongs to. The view (`web/www/hood.js`) shows the last click's line
 and its process tree (each process labelled: the agent, an MCP server, libgit2, the recording ffmpeg), the event log, the connections by host and the files written, with the
@@ -93,7 +96,7 @@ browser tab
 └─ worker.js: a Web Worker running the WASIX v2 machine (web/src/lib.rs)
    ├─ console: the terminal, as the machine's /dev/hvc0, while a line runs
    ├─ /bin/clai: clai built with GOOS=wasix GOARCH=wasm
-   ├─ /go: the Go toolchain, a package the page mounts when it is opened with ?go
+   ├─ /go: the Go toolchain, a package the page mounts at every boot
    ├─ /bin/npx, /bin/uvx: mcp/launcher.sh, which starts the MCP server ports below
    ├─ /bin/duckduckgo-mcp-server: mcp/duckduckgo-mcp-server, built like clai
    ├─ /bin/mcp-server-filesystem: mcp/mcp-server-filesystem, built like clai
@@ -104,15 +107,16 @@ browser tab
    ├─ /usr/local/bin/play: audio/play.sh, which plays a sound file in the page
    ├─ /run/audio/mic, /run/audio/tab: the page's microphone and shared tab audio (web/src/audio.rs)
    ├─ /bin/bash, /bin/ls, ...: registry packages (WASIX v1), on the kernel's v1 compatibility ABI
-   └─ network: wasixv2-vnet-wisp, one WebSocket to the WISP proxy
-                 └─ server.mjs: page, WISP proxy (wisp-js) and real TCP, on 127.0.0.1:5001
+   └─ network: the page's own fetch calls, no proxy and no server: the guest's HTTP/1.1
+                 (web/src/fetch.rs) and its one-request host call (web/src/host.rs)
+                 └─ server.mjs: the page's files, the check's model and its stub site, on 127.0.0.1:5001
 ```
 
 | Path | What it is |
 | --- | --- |
 | `components/go` | The Go port: `GOOS=wasix GOARCH=wasm` on go1.26.10 ([baalimago/go](https://github.com/baalimago/go/tree/claude/project-thread-77lz17)) |
 | `components/wasixv2-abi` | The ABI and its code generators, including the Go backend that writes the port's syscall glue. Not needed for the build; it is here to regenerate that glue |
-| `components/wasmer` | The WASIX v2 kernel and the WISP network backend for browsers ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-1nkwvt)) |
+| `components/wasmer` | The WASIX v2 kernel ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/claude/project-thread-1nkwvt)); its WISP backend for browsers is in the tree but the page no longer uses it |
 | `components/clai` | clai itself, unchanged |
 | `components/slivingdoc`, `components/libgit2` | slivingdoc v1.3.1 and the libgit2 v1.9.6 it pins, unchanged |
 | `mcp/mcpserver` | The MCP stdio server (JSON-RPC, initialize, tools) the Go ports share |
@@ -126,11 +130,13 @@ browser tab
 | `web/src/audio.rs` | `/run/audio`: the page's audio inputs as files that stream while they are open |
 | `web/www/audio.js` | Captures the microphone and a shared tab's audio for those files |
 | `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted and clai and the packages in `/bin`, compiles each program once, runs a file as often as asked |
+| `web/src/fetch.rs`, `web/httpwire` | The network: the guest's plaintext HTTP/1.1 as the page's `fetch` calls, and the parsing that carries it, which tests on the host |
+| `web/src/host.rs`, `web/src/jshttp.rs` | The page as the machine's host: `http-open`, one whole request and its streamed response per descriptor, over the same `fetch` |
 | `web/src/packages.rs` | Installs webc packages as `wasmer run` does: commands in `/bin`, with their `wasi` annotations for v1 programs, and volumes where the package says |
 | `web/packages.txt`, `web/fetch-packages.mjs` | The registry packages, and the script that downloads them to `web/www/packages` |
 | `web/www` | The page, its worker and its line editor |
-| `web/server.mjs` | Serves the page and the WISP proxy on one port |
-| `web/check.mjs` | The headless check behind `make check` |
+| `web/server.mjs` | Serves the page's files and the check's model on one port |
+| `web/check.mjs`, `web/check-fetch.mjs` | The headless checks behind `make check`: what the machine runs, and what its network carries |
 
 Each line runs as a new `bash -c` in the directory the page's `cd` last chose, with what
 `export` set, so `cd` and `export` are the page's own. While a line runs, what you type goes to
@@ -148,32 +154,28 @@ the others up.
 ## What works
 
 - `clai h`, `clai help`, `clai version`, `clai confdir` and anything else that only prints.
-- Name lookups, TCP and HTTPS: the guest resolves names through the WISP proxy, and its
-  connections go out through the proxy's host. If the page's WebSocket to the proxy closes (the
-  server restarted, the laptop slept), connections fail until it reopens, which it does on
-  its own within half a second to 30 seconds. TLS clients trust Mozilla's roots, which
-  `make` writes to `web/www/ca-certificates.crt` from the Node.js running the build, and the
-  machine mounts at `/etc/ssl/certs/ca-certificates.crt`. So
-  `export OPENAI_API_KEY=sk-...` then `clai -cm gpt-4o q hello` makes a live query. Where this
-  was built, every outbound connection went through a proxy that re-signs TLS, so the check
-  there was with the proxy's CA appended to the bundle: `clai -cm claude-sonnet-5-5 q hello`
-  with a made-up key got Anthropic's `401 invalid x-api-key` back.
+- Name lookups and the network: the guest resolves a name to an address the machine hands out
+  (`web/src/names.rs`), and a connection to that address becomes one request the page's `fetch`
+  makes (`web/src/fetch.rs`). Nothing leaves except what the browser allows, and the guest never
+  terminates TLS, so `export OPENAI_API_KEY=sk-...` then `clai -cm gpt-4.1-mini q hello` makes a
+  live query. See [The network](#the-network) for what a host needs to answer.
 - Interactive prompts: `clai setup`, `clai chat list` and the like read from the terminal, with
   the kernel editing the line as you type it, and `^C` stops clai.
-- Go in the tab: open the page with `?go` and the machine mounts the Go toolchain at `/go`
-  (171 MB, 39.5 MB gzipped, from [research/go-toolchain](research/go-toolchain)). `go build`,
+- Go in the tab: every boot mounts the Go toolchain at `/go` (171 MB, 39.5 MB gzipped, from
+  [research/go-toolchain](research/go-toolchain)), so a page without `make go-package` says what
+  to run. `go build`,
   `go test` and `go vet` then run in the tab, the standard library and the module's own packages
   included, and what they build runs on the same kernel:
   `mkdir -p ~/hello && cd ~/hello && go mod init hello && printf 'package main\n\nimport "fmt"\n\nfunc main() { fmt.Println("hello from the tab") }\n' > main.go && go build -o hello . && ./hello`.
   The first build compiles every package the program imports, in the tab: 77 to 87 s for a
   program that imports `fmt`, `sort` and a package of its own. The cache is in the tab's home, so
-  the next build takes 0.7 s. The package is fetched on every page load, so `?go` is opt-in.
+  the next build takes 0.7 s.
   The page writes four examples into `~/examples` (from `web/www/examples`): `hello` (one file),
   `words` (a module with its own package and a test), `report` (`encoding/json` and `sort`) and
   `ticker` (goroutines). `cd ~/examples/hello && go run .` prints `hello from the tab`;
   `cd ~/examples/words && go test ./...` prints `ok words/text`.
   Modules outside the standard library work too: `go get rsc.io/quote` downloads three modules
-  through the page's WISP network in 15 s, then `go build` compiles them, 88 s cold. The port's
+  through the page's network, then `go build` compiles them, 88 s cold. The port's
   `go env` carries no `GOPROXY` or `GOSUMDB`, so `/usr/local/bin/go` sets both
   (research/go-toolchain/go.sh); an `export` wins.
 - Starting programs: Go's `os/exec` starts them through wasixv2's `spawn` (`posix_spawn` in one
@@ -183,6 +185,42 @@ the others up.
   registry's packages, and so do clai's `cmd` tool and `-add-shell-context`, each running
   `sh -c`. A shell context's first variable starts bash, which compiles first, so give it a
   `timeout_ms` of some seconds rather than the 100 ms default.
+
+## The network
+
+The machine's traffic goes out as the page's own `fetch` calls: no proxy behind the page, and no
+server of any kind, so a copy of the page served as files runs clai against a model. A guest has
+two ways to reach a peer, and neither of them terminates TLS in the guest:
+
+| What the guest does | Goes out as | What carries it |
+| --- | --- | --- |
+| `WASIX_HTTP=host` (every run, `web/www/worker.js`) and any `http`/`https` request | the same URL, made by the page's `fetch`, with the browser's TLS | `http-open`: one whole request as data, its response streamed back (`web/src/host.rs`, `components/go/src/net/http/wasix_http.go`) |
+| `WASIX_HTTP=socket`, or a program that dials a socket itself | plaintext HTTP/1.1, one request per connection | `web/src/fetch.rs`, which parses it and makes one `fetch` per request |
+| `WASIX_HTTP=socket` and an `https` URL | nothing: the guest writes a ClientHello | no fetch call can carry it, so the terminal says what the backend made of those bytes |
+
+The host call is one function in the guest ABI (`http-open`,
+`components/wasixv2-abi/wit/ext.wit`): the request as `u32` counts and then the bytes — method,
+URL, header count and pairs, body — and the response the same shape with a status in front. The
+guest reads it as a descriptor: the head, then the body, then 0. TLS is Chrome's, so nothing is
+plaintext on any wire; the host never follows a redirect, and refuses `host`, `content-length`,
+`connection`, `user-agent` and `accept-encoding`, which the browser sets or refuses itself. A
+runtime without the call answers `ENOSYS`, and the port's transport then falls back to the socket.
+
+The page must be allowed by the target: a cross-origin request is a CORS request, so a
+provider must answer the page's origin for a preflight. This is the target's work, not the
+page's. `make check` runs `web/check-fetch.mjs`, which drives a model on the page's own origin
+(`web/server.mjs`, `/test/v1`) through the host call and through the socket, and shows that the
+socket refuses an `https` URL with the reason. It also runs `web/check.mjs`, whose `slivingdoc`
+rows sign in and out against the stub site `web/server.mjs` serves on the page's own port: no
+cloud account, and no CORS request.
+
+So a live query to an OpenAI-compatible endpoint with the visitor's own key works today, streamed
+into the terminal, with nothing configured first, and `https` reaches it whatever the page's
+origin holds:
+
+```
+OPENAI_API_KEY=sk-… clai -cm gpt-4.1-mini query "what is wasix?"
+```
 
 ## MCP servers
 
@@ -258,10 +296,10 @@ model):
 ```sh
 export OPENAI_API_KEY=sk-...
 mkdir -p ~/meetings && cd ~/meetings
-clai -profile-path cchub:baalimago/meeting-transcriber@11 -query-summary query "Daily sync"
+clai -profile-path cchub:baalimago/meeting-transcriber -query-summary query "Daily sync"
 ```
 
-clai asks you to trust the profile first (or `clai profiles trust cchub:baalimago/meeting-transcriber@11`),
+clai asks you to trust the profile first (or `clai profiles trust cchub:baalimago/meeting-transcriber`),
 starts slivingdoc and the filesystem server (on the directory you run it in) for the notes, and
 Enter stops the recording. The recording and the files clai
 writes are in the tab's memory only.
@@ -320,8 +358,8 @@ without it:
 | `go vet ./...` | exit 0 |
 | `go build cmd/compile` | sees the module through `cmd/go` and stops in `cmd/compile/internal/ssagen`, where the guest compiler traps |
 
-The page mounts this toolchain at `/go` when it is opened with `?go`: 39.5 MB gzipped, paid on
-every page load, and the first build of a module costs the standard library's 80 s in the tab.
+The page mounts this toolchain at `/go` at every boot: 39.5 MB gzipped, paid on every page load,
+and the first build of a module costs the standard library's 80 s in the tab.
 
 ## What doesn't work yet
 
@@ -337,8 +375,9 @@ every page load, and the first build of a module costs the standard library's 80
   25 MB with a `*diarize*` model.
 - `npx` and `uvx` run only the ports in `/bin`: there is no Node.js or Python package
   installation (see [MCP servers](#mcp-servers)).
-- slivingdoc's login lives in the machine's memory like every other file, so a reloaded page
-  signs in again.
+- A slivingdoc login is kept in the browser's storage, so a reloaded page puts it back; Sign out
+  revokes the key at the site and forgets it. A page whose site does not allow its origin cannot
+  sign in at all: the site's CORS headers are its owner's work.
 - `fetch_content` refuses addresses that are not public, as the Python server does, so a
   network whose DNS answers with private addresses (a VPN's fake IPs in 198.18.0.0/15, say)
   needs `DDG_ALLOW_PRIVATE_URLS=1`.

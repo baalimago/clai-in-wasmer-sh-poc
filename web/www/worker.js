@@ -11,9 +11,7 @@ const fetchBytes = async (url) => {
   return new Uint8Array(await response.arrayBuffer());
 };
 
-// `go` is the page's `?go`: the Go toolchain, a 171 MB package it mounts at /go, which the
-// page leaves out otherwise.
-const { size: { rows, cols }, go } = await new Promise((resolve) => (onmessage = ({ data }) => resolve(data)));
+const { size: { rows, cols } } = await new Promise((resolve) => (onmessage = ({ data }) => resolve(data)));
 // The registry packages `make` downloaded (fetch-packages.mjs), if it did.
 const packageList = async () => {
   const response = await fetch("./packages/index.json");
@@ -31,23 +29,20 @@ await init();
 const certificates = await fetchBytes("./ca-certificates.crt");
 const [programs, list] = await Promise.all([programList(), packageList()]);
 post({ log: `Loading ${[...programs, ...list].map(({ name }) => name).join(", ")}…` });
-if (go) post({ log: "Fetching the Go toolchain for /go…" });
+post({ log: "Fetching the Go toolchain for /go…" });
 const [programBytes, packages, toolchain] = await Promise.all([
   Promise.all(programs.map(({ file }) => fetchBytes(`./${file}`))),
   Promise.all(list.map(({ file }) => fetchBytes(`./packages/${file}`))),
-  // `make go-package` packs it; a page opened with ?go without it still boots, and says so.
-  go
-    ? fetchBytes("./go/go.webc").catch(() => {
-        post({ log: "\x1b[33mNo Go toolchain in this page: run make go-package, then reload.\x1b[0m" });
-        return null;
-      })
-    : null,
+  // `make go-package` packs it; a page without it still boots, and says so.
+  fetchBytes("./go/go.webc").catch(() => {
+    post({ log: "\x1b[33mNo Go toolchain in this page: run make go-package, then reload.\x1b[0m" });
+    return null;
+  }),
 ]);
 const local = programs.map(({ dir }) => dir === "/usr/local/bin");
 const pick = (items, wantLocal) => items.filter((_, i) => local[i] === wantLocal);
 const names = programs.map(({ name }) => name);
 const shell = await boot(
-  `ws://${location.host}/`,
   certificates,
   pick(names, false),
   pick(programBytes, false),
@@ -58,9 +53,14 @@ const shell = await boot(
   cols,
 );
 for (const note of shell.notes()) post({ log: `\x1b[33m${note}\x1b[0m` });
+// Every run asks the host to carry its HTTP: the page's fetch is the client, with the browser's
+// own TLS (WASIX_HTTP=host, components/go/src/net/http/wasix_http.go). A line that sets
+// WASIX_HTTP keeps its own value, because bash applies its assignments over the login's.
+const HOST = "WASIX_HTTP=host";
 const home = shell.login_env().find((v) => v.startsWith("HOME="))?.slice("HOME=".length) ?? "/";
 post({ events: shell.take_events() });
 post({ ready: true, bash: list.some(({ name }) => name === "wasmer/bash"), home });
+post({ log: "Network: the page's fetch is the client, with the browser's TLS, and only what the browser lets the page reach." });
 
 // The audio inputs whose /run/audio files are open, which the page captures and sends back.
 let wanted = "";
@@ -92,12 +92,13 @@ onmessage = async ({ data: { path, args, env, input, size, samples, devices } })
     if (events !== "[]") post({ events });
     const outbox = shell.take_outbox();
     if (outbox.length > 0) post({ outbox });
+    for (const note of shell.take_network_notes()) post({ log: `\x1b[33m${note}\x1b[0m` });
     audio();
   };
   const timer = setInterval(drain, 30);
   let status;
   try {
-    status = await shell.run(path, args, env);
+    status = await shell.run(path, args, [...(env ?? []), HOST]);
   } catch (error) {
     post({ error: String(error) });
     status = 1;

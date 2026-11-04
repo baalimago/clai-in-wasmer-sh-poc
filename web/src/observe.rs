@@ -19,12 +19,6 @@ pub trait Hosts: Send + Sync {
     fn host_for(&self, addr: IpAddr) -> Option<String>;
 }
 
-impl Hosts for wasixv2_vnet_wisp::WispBackend {
-    fn host_for(&self, addr: IpAddr) -> Option<String> {
-        wasixv2_vnet_wisp::WispBackend::host_for(self, addr)
-    }
-}
-
 pub struct Recorder<H> {
     hosts: H,
     clock: fn() -> f64,
@@ -177,6 +171,20 @@ fn entry(at: f64, event: &Event, host: Option<&str>) -> String {
         }
         Event::Close { pid, fd } => {
             let _ = write!(out, r#""type":"close","pid":{pid},"fd":{fd}"#);
+        }
+        Event::Http {
+            pid,
+            fd,
+            method,
+            host,
+            bytes,
+        } => {
+            let _ = write!(
+                out,
+                r#""type":"http","pid":{pid},"fd":{fd},"method":{},"host":{},"bytes":{bytes}"#,
+                quote(method),
+                quote(host)
+            );
         }
         Event::Unlink { pid, path } => {
             let _ = write!(out, r#""type":"unlink","pid":{pid},"path":{}"#, quote(path));
