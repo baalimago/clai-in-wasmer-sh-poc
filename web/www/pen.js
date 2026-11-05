@@ -44,7 +44,14 @@ export const writingMs = (width) => Math.round(Math.min(1700, Math.max(260, widt
 
 const rand = (lo, hi) => lo + Math.random() * (hi - lo);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+// A hidden page gets no animation frames: a timer moves the pens on there.
+const frame = () => new Promise((resolve) => {
+  const timer = setTimeout(resolve, 100);
+  requestAnimationFrame(() => {
+    clearTimeout(timer);
+    resolve();
+  });
+});
 const easeOut = (p) => 1 - (1 - p) ** 3;
 const easeIn = (p) => p * p;
 
@@ -123,14 +130,14 @@ export class Pens {
   }
 
   // The pens about the page are small and quick by default.
-  pen({ size = 0.7, pace = 0.6 } = {}) {
+  pen({ size = 0.7, pace = 0.6, kind = Math.floor(Math.random() * KINDS.length) } = {}) {
     if (!this.layer) {
       this.layer = this.doc.createElement("div");
       this.layer.className = "pens";
       this.layer.setAttribute("aria-hidden", "true");
       this.doc.body.append(this.layer);
     }
-    return new Pen(this.layer, KINDS[Math.floor(Math.random() * KINDS.length)], { size, pace });
+    return new Pen(this.layer, KINDS[kind], { size, pace });
   }
 
   // Writes `el` in with a pen of its own, after `delay`: it is hidden at once, so call this in

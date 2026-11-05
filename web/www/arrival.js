@@ -103,7 +103,7 @@ export class Arrival {
     this.ink.classList.add("loader-ink");
     this.list.append(this.ink);
     // The pad's own pen: big and unhurried.
-    this.pen = this.pens.pen({ size: 1.5, pace: 1.5 });
+    this.pen = this.pens.pen({ size: 1.5, pace: 1.5, kind: 0 });
     this.doodles = [];
     this.doodled = 0;
     const lines = [];
@@ -132,9 +132,10 @@ export class Arrival {
         await this.stroke(this.tickPath(lines.indexOf(due)), 300 * hurry, "tick");
         continue;
       }
-      if (this.ready) break;
+      if (this.ready && this.doodled > 0) break;
       await this.doodle();
       this.doodled += 1;
+      await sleep(rand(300, 700) * this.pen.pace);
     }
     await this.erase();
   }
