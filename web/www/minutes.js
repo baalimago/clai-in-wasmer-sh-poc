@@ -298,12 +298,13 @@ export class Minutes {
     $("#signin").onclick = () => this.signin(window.open("about:blank", "_blank"));
     $("#signout").onclick = () => this.signout();
     $("#not-now").onclick = () => {
-      this.connecting = false;
-      this.store.set(STORED_LOCAL, "1");
+      this.keepLocal();
       this.render();
     };
     $("#connect").onclick = () => {
       this.connecting = !this.connecting;
+      // The sign-in note is on the new recording's page.
+      if (this.connecting) this.view = "record";
       this.render();
       if (this.connecting) $("#token-input").focus();
     };
@@ -336,6 +337,12 @@ export class Minutes {
       const path = link.dataset.note.replace("meetings/transcripts/", "meetings/summaries/");
       this.open(this.meetings.find((m) => m.path === path) ?? { path, ...describeFile(path) });
     });
+  }
+
+  // The user keeps the notes in this browser: the sign-in note goes, and stays away.
+  keepLocal() {
+    this.connecting = false;
+    this.store.set(STORED_LOCAL, "1");
   }
 
   get connected() {
@@ -616,6 +623,8 @@ export class Minutes {
     if (this.spaces) return this.status("Choose the slivingdoc space for your meetings first.");
     this.status("");
     if (this.needsTrust && !(await this.trust())) return;
+    // Recording past the sign-in note answers it: the notes stay in this browser.
+    if (!this.connected && this.connecting) this.keepLocal();
     // Nothing of the last meeting carries over: its notes, recording, history or the form's text.
     this.current = null;
     this.historyItems = null;
@@ -780,7 +789,7 @@ export class Minutes {
     $("#change-key").hidden = !keyed;
     $("#notebook-chip").textContent = this.login ? `slivingdoc: ${this.login}` : this.connected ? "slivingdoc: connected" : "slivingdoc: local notebook";
     $("#key-form").hidden = keyed;
-    $("#notebook-card").hidden = this.connected || !this.connecting;
+    $("#notebook-card").hidden = this.connected || !this.connecting || (this.view ?? "record") !== "record";
     $("#signin").disabled = Boolean(this.signing);
     $("#signin-wait").hidden = !this.signing;
     if (this.signing) {
