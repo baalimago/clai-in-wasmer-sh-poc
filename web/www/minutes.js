@@ -221,6 +221,8 @@ const CREDENTIALS = "~/.config/slivingdoc/credentials.json";
 const STORED_LOGIN = "minutes.slivingdoc-credentials";
 const STORED_TRUST = "minutes.clai-trust";
 const STORED_KEY = "minutes.openai-key";
+// Set once the user chose to keep the notes in this browser: the sign-in note then stays away.
+const STORED_LOCAL = "minutes.local-only";
 const TRUST = '"$(clai confdir)/trust.json"';
 
 const transcriptOf = (summary) => summary.replace("meetings/summaries/", "meetings/transcripts/");
@@ -246,7 +248,7 @@ export class Minutes {
     this.signoutNote = null;
     this.trusted = null;
     this.spaces = null;
-    this.connecting = true;
+    this.connecting = !this.store.get(STORED_LOCAL);
     this.config = { ...DEFAULTS, ...config };
     this.meetings = [];
     this.waiters = new Map();
@@ -289,6 +291,7 @@ export class Minutes {
     $("#signout").onclick = () => this.signout();
     $("#not-now").onclick = () => {
       this.connecting = false;
+      this.store.set(STORED_LOCAL, "1");
       this.render();
     };
     $("#connect").onclick = () => {
@@ -442,6 +445,7 @@ export class Minutes {
       return;
     }
     this.store.set(STORED_LOGIN, compact(body));
+    this.store.remove(STORED_LOCAL);
     this.login = accountOf(body) ?? "signed in";
     this.signing = null;
     this.connecting = false;

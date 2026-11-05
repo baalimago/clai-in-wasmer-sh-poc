@@ -62,11 +62,12 @@ export const wrapWords = (text, width, max) => {
 const rand = (lo, hi) => lo + Math.random() * (hi - lo);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const j = (n = 1.5) => rand(-n, n);
-const pt = (x, y) => `${(x + j()).toFixed(1)} ${(y + j()).toFixed(1)}`;
+const pt = (x, y, n = 1.5) => `${(x + j(n)).toFixed(1)} ${(y + j(n)).toFixed(1)}`;
 
 // Shapes in a box from (0, 0) to (w, h): each returns the path data, drawn as one stroke.
 export const SHAPES = {
-  coil: { w: 150, h: 26, d: (w, h) => { let s = `M0 ${h}`; for (let t = 0; t <= 7 * Math.PI * 2; t += 0.35) s += ` L${pt(6 + t * 4.6 - 11 * Math.sin(t), h / 2 + 11 * Math.cos(t + Math.PI))}`; return s; } },
+  // Round loops: the pen goes round a circle while it moves on slowly.
+  coil: { w: 120, h: 26, d: (w, h) => { let s = ""; for (let t = 0; t <= 7 * Math.PI * 2; t += 0.18) s += `${s ? " L" : "M"}${pt(12 + t * 2.2 - 11 * Math.sin(t), h / 2 + 11 * Math.cos(t + Math.PI), 0.4)}`; return s; } },
   spiral: { w: 60, h: 60, d: () => { let s = "M30 30"; for (let t = 0; t <= 5.5 * Math.PI * 2; t += 0.25) s += ` L${pt(30 + t * 0.85 * Math.cos(t), 30 + t * 0.85 * Math.sin(t), 0.6)}`; return s; } },
   star: { w: 56, h: 54, d: () => { const p = [0, 2, 4, 1, 3, 0].map((i) => [28 + 26 * Math.cos(-Math.PI / 2 + (i * 2 * Math.PI) / 5), 29 + 26 * Math.sin(-Math.PI / 2 + (i * 2 * Math.PI) / 5)]); return `M${p.map(([x, y]) => pt(x, y)).join(" L")}`; } },
   cube: { w: 62, h: 62, d: () => `M${pt(4, 18)} L${pt(42, 18)} L${pt(42, 58)} L${pt(4, 58)} Z M${pt(4, 18)} L${pt(20, 4)} L${pt(58, 4)} L${pt(42, 18)} M${pt(58, 4)} L${pt(58, 44)} L${pt(42, 58)}` },
@@ -225,8 +226,8 @@ export class Doodles {
     }
     const g = this.group({ x, y });
     this.swirled = g;
-    let d = "M0 24";
-    for (let t = -Math.PI / 2; t <= 8 * Math.PI * 2; t += 0.3) d += ` L${pt(6 + 5.6 * (t + Math.PI / 2) - 12 * Math.sin(t), 12 - 12 * Math.cos(t), 0.6)}`;
+    let d = "";
+    for (let t = -Math.PI / 2; t <= 8 * Math.PI * 2; t += 0.18) d += `${d ? " L" : "M"}${pt(14 + 2.6 * (t + Math.PI / 2) - 12 * Math.sin(t), 12 - 12 * Math.cos(t), 0.4)}`;
     await this.draw(this.stroke(g, d), 3200, live);
   }
 
