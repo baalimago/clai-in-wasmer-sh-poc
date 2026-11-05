@@ -1,6 +1,6 @@
 //! The page's `fetch`, as one exchange: a request out, a response head and its body in, chunk
-//! by chunk while the body streams. The backend in [`crate::fetch`] turns those chunks into the
-//! bytes a guest reads on its socket.
+//! by chunk while the body streams. [`crate::host`] turns those chunks into what a guest reads from
+//! its `http-open` descriptor.
 
 use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
@@ -93,13 +93,6 @@ pub async fn next(reader: &ReadableStreamDefaultReader) -> Result<Option<Vec<u8>
         .dyn_into::<Uint8Array>()
         .map_err(|_| "a body chunk was not bytes".to_string())?;
     Ok(Some(chunk.to_vec()))
-}
-
-/// Ends the request, for a socket the guest closed while its response still streamed.
-pub fn abort(controller: &JsValue) {
-    if let Some(controller) = controller.dyn_ref::<AbortController>() {
-        controller.abort();
-    }
 }
 
 fn fetch(request: &Request) -> Result<Promise, String> {

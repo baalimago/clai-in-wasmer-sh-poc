@@ -102,8 +102,8 @@ browser tab
    ├─ /usr/local/bin/play: audio/play.sh, which plays a sound file in the page
    ├─ /run/audio/mic, /run/audio/tab: the page's microphone and shared tab audio (web/src/audio.rs)
    ├─ /bin/bash, /bin/ls, ...: registry packages (WASIX v1), on the kernel's v1 compatibility ABI
-   └─ network: the page's own fetch calls, no proxy and no server: the guest's HTTP/1.1
-                 (web/src/fetch.rs) and its one-request host call (web/src/host.rs)
+   └─ network: the page's own fetch calls, no proxy and no server: the guest's one-request
+                 host call (web/src/host.rs); sockets are refused (web/src/net.rs)
                  └─ server.mjs: the page's files, the check's model and its stub site, on 127.0.0.1:5001
 ```
 
@@ -111,7 +111,7 @@ browser tab
 | --- | --- |
 | `components/go` | The Go port: `GOOS=wasix GOARCH=wasm` on go1.26.10 ([baalimago/go](https://github.com/baalimago/go/tree/poc-clai-via-wasix-wasmersh)) |
 | `components/wasixv2-abi` | The ABI and its code generators, including the Go backend that writes the port's syscall glue. Not needed for the build; it is here to regenerate that glue |
-| `components/wasmer` | The WASIX v2 kernel ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/poc-clai-via-wasix-wasmersh)); its WISP backend for browsers is in the tree but the page no longer uses it |
+| `components/wasmer` | The WASIX v2 kernel ([baalimago/wasmer](https://github.com/baalimago/wasmer/tree/poc-clai-via-wasix-wasmersh)) |
 | `components/clai` | clai itself, unchanged |
 | `components/slivingdoc`, `components/libgit2` | slivingdoc v1.3.1 and the libgit2 v1.9.6 it pins, unchanged |
 | `mcp/mcpserver` | The MCP stdio server (JSON-RPC, initialize, tools) the Go ports share |
@@ -125,7 +125,7 @@ browser tab
 | `web/src/audio.rs` | `/run/audio`: the page's audio inputs as files that stream while they are open |
 | `web/www/audio.js` | Captures the microphone and a shared tab's audio for those files |
 | `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted and clai and the packages in `/bin`, compiles each program once, runs a file as often as asked |
-| `web/src/fetch.rs`, `web/httpwire` | The network: the guest's plaintext HTTP/1.1 as the page's `fetch` calls, and the parsing that carries it, which tests on the host |
+| `web/src/net.rs`, `web/src/names.rs` | The machine's sockets: name lookups answered with addresses the page hands out, and every connection refused with the reason |
 | `web/src/host.rs`, `web/src/jshttp.rs` | The page as the machine's host: `http-open`, one whole request and its streamed response per descriptor, over the same `fetch` |
 | `web/src/packages.rs` | Installs webc packages as `wasmer run` does: commands in `/bin`, with their `wasi` annotations for v1 programs, and volumes where the package says |
 | `web/packages.txt`, `web/fetch-packages.mjs` | The registry packages, and the script that downloads them to `web/www/packages` |
@@ -149,9 +149,8 @@ the others up.
 ## What works
 
 - `clai h`, `clai help`, `clai version`, `clai confdir` and anything else that only prints.
-- Name lookups and the network: the guest resolves a name to an address the machine hands out
-  (`web/src/names.rs`), and a connection to that address becomes one request the page's `fetch`
-  makes (`web/src/fetch.rs`). Nothing leaves except what the browser allows, and the guest never
+- The network: each HTTP request is one host call that the page's `fetch` makes
+  (`web/src/host.rs`). Nothing leaves except what the browser allows, and the guest never
   terminates TLS, so `export OPENAI_API_KEY=sk-...` then `clai -cm gpt-4.1-mini q hello` makes a
   live query. See [The network](#the-network) for what a host needs to answer.
 - Interactive prompts: `clai setup`, `clai chat list` and the like read from the terminal, with
@@ -167,14 +166,13 @@ the others up.
 ## The network
 
 The machine's traffic goes out as the page's own `fetch` calls: no proxy behind the page, and no
-server of any kind, so a copy of the page served as files runs clai against a model. A guest has
-two ways to reach a peer, and neither of them terminates TLS in the guest:
-
-| What the guest does | Goes out as | What carries it |
-| --- | --- | --- |
-| `WASIX_HTTP=host` (every run, `web/www/worker.js`) and any `http`/`https` request | the same URL, made by the page's `fetch`, with the browser's TLS | `http-open`: one whole request as data, its response streamed back (`web/src/host.rs`, `components/go/src/net/http/wasix_http.go`) |
-| `WASIX_HTTP=socket`, or a program that dials a socket itself | plaintext HTTP/1.1, one request per connection | `web/src/fetch.rs`, which parses it and makes one `fetch` per request |
-| `WASIX_HTTP=socket` and an `https` URL | nothing: the guest writes a ClientHello | no fetch call can carry it, so the terminal says what the backend made of those bytes |
+server of any kind, so a copy of the page served as files runs clai against a model. Every run
+has `WASIX_HTTP=host` (`web/www/worker.js`), so Go's `net/http` hands each `http` or `https`
+request to the host as data (`components/go/src/net/http/wasix_http.go`), and the page's `fetch`
+makes it with the browser's TLS (`web/src/host.rs`). A program that dials a socket itself, or a
+line with `WASIX_HTTP=socket`, is refused: the page has no socket to give, and the terminal says
+so (`web/src/net.rs`). Name lookups still answer, with addresses in 198.18.0.0/15 that the page
+hands out (`web/src/names.rs`), for programs that resolve a name before they fetch.
 
 The host call is one function in the guest ABI (`http-open`,
 `components/wasixv2-abi/wit/ext.wit`): the request as `u32` counts and then the bytes — method,
@@ -182,13 +180,14 @@ URL, header count and pairs, body — and the response the same shape with a sta
 guest reads it as a descriptor: the head, then the body, then 0. TLS is Chrome's, so nothing is
 plaintext on any wire; the host never follows a redirect, and refuses `host`, `content-length`,
 `connection`, `user-agent` and `accept-encoding`, which the browser sets or refuses itself. A
-runtime without the call answers `ENOSYS`, and the port's transport then falls back to the socket.
+runtime without the call answers `ENOSYS`, and the port's transport then falls back to a socket,
+which a native runtime has.
 
 The page must be allowed by the target: a cross-origin request is a CORS request, so a
 provider must answer the page's origin for a preflight. This is the target's work, not the
 page's. `make check` runs `web/check-fetch.mjs`, which drives a model on the page's own origin
-(`web/server.mjs`, `/test/v1`) through the host call and through the socket, and shows that the
-socket refuses an `https` URL with the reason. It also runs `web/check.mjs`, whose `slivingdoc`
+(`web/server.mjs`, `/test/v1`) through the host call, and shows that a socket is refused with
+the reason. It also runs `web/check.mjs`, whose `slivingdoc`
 rows sign in and out against the stub site `web/server.mjs` serves on the page's own port: no
 cloud account, and no CORS request.
 

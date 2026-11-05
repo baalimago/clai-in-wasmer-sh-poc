@@ -1,14 +1,14 @@
-//! One WASIX v2 machine per page, its network the page's own `fetch` calls ([`fetch`]), and the
+//! One WASIX v2 machine per page, its network the page's own `fetch` calls ([`host`]), and the
 //! page's terminal as its console. Its `/bin` holds clai and the commands of Wasmer registry
 //! packages (WASIX v1 programs, which the kernel's v1 compatibility ABI runs). The page runs
 //! programs on it one after another, so files they write (clai's config in `~/.config`) stay
 //! between runs.
 
 mod audio;
-mod fetch;
 mod host;
 mod jshttp;
 mod names;
+mod net;
 mod observe;
 mod outbox;
 mod packages;
@@ -49,8 +49,8 @@ pub struct Shell {
     output: Output,
     audio: Arc<audio::AudioFs>,
     outbox: Arc<outbox::Outbox>,
-    recorder: Arc<observe::Recorder<fetch::FetchBackend>>,
-    net: fetch::FetchBackend,
+    recorder: Arc<observe::Recorder<net::PageNet>>,
+    net: net::PageNet,
     notes: Vec<String>,
 }
 
@@ -59,7 +59,7 @@ pub struct Shell {
 /// with [`Shell::add_audio_input`].
 const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab", "Monitor of Shared tab or screen (browser)")];
 
-/// Boots the machine; its traffic leaves through the page's `fetch` calls ([`fetch`]), whose TLS
+/// Boots the machine; its traffic leaves through the page's `fetch` calls ([`host`]), whose TLS
 /// clients trust `ca_certificates`, a PEM bundle at `/etc/ssl/certs/ca-certificates.crt`, where
 /// Debian keeps it and Go's `crypto/x509` looks first, and its console is a terminal of `rows`
 /// by `cols` that [`Shell::type_input`] types into. `/bin` holds `programs` (clai, the MCP
@@ -81,7 +81,7 @@ pub async fn boot(
     rows: u16,
     cols: u16,
 ) -> Result<Shell, JsError> {
-    let backend = fetch::FetchBackend::new();
+    let backend = net::PageNet::default();
     let input = Arc::new(Input::default());
     let output = Output::default();
     let console = Console {
@@ -248,8 +248,7 @@ impl Shell {
         self.outbox.take().iter().map(|m| Uint8Array::from(m.as_slice())).collect()
     }
 
-    /// What the page's network could not carry since the last call: the browser's reason, or a
-    /// guest that wanted a socket the browser will not make.
+    /// The connections the page refused since the last call, and why ([`net`]).
     pub fn take_network_notes(&self) -> Vec<String> {
         self.net.take_notes()
     }

@@ -1,7 +1,7 @@
 //! Names to addresses, as a fake-IP resolver hands them out: a name gets an address of its own in
-//! 198.18.0.0/15, and a connection to that address leads back to the name. This is the scheme the
-//! kernel's `vnet-wisp/src/names.rs` uses, so the kernel reads a name from an address the way it
-//! expects; here the browser resolves the name, so no server is asked.
+//! 198.18.0.0/15, and a connection to that address leads back to the name. A program that
+//! resolves a name itself (the DuckDuckGo port checks an address before it fetches) gets an
+//! answer, and the page's view names the host behind an address; no server is asked.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};

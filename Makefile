@@ -30,7 +30,6 @@ serve: build
 # Headless: runs `clai h`, `clai help`, shell lines and an MCP server in the page and checks what
 # they print.
 check: build
-	cd $(WEB) && $(CARGO) test --package httpwire
 	cd $(WEB) && npx playwright install chromium && npm test
 
 build: $(WWW)/clai.wasm $(WWW)/bin/index.json $(WWW)/ca-certificates.crt $(WWW)/pkg/clai_web.js \

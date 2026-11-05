@@ -1,12 +1,10 @@
-# Its own workspace: it only builds for the browser, against the wasmer submodule. `httpwire` holds
-# the HTTP/1.1 the fetch backend carries, which tests on the host because it has no wasm in it.
+# Its own workspace: it only builds for the browser, against the wasmer submodule.
 [workspace]
-members = ["httpwire"]
 
 [package]
 name = "clai-web"
 version = "0.0.0"
-description = "A WASIX v2 machine in the page that runs clai, with its network over WISP"
+description = "A WASIX v2 machine in the page that runs clai, with its HTTP carried by the page's fetch"
 publish = false
 edition = "2024"
 license = "MIT"
@@ -16,7 +14,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 async-trait = "0.1"
-httpwire = { path = "httpwire" }
 js-sys = "0.3"
 wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["js", "web", "wasix1"] }
 wasixv2-abi = { path = "../components/wasmer/lib/wasixv2/abi" }
