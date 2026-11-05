@@ -59,6 +59,16 @@ export class Arrival {
     this.phases = [];
     this.waiting = null;
     this.calm = pens.calm;
+    // ?slowload=SECONDS keeps the loading on the pad at least that long, to watch it.
+    const hold = Number(new URLSearchParams(doc.location?.search ?? "").get("slowload")) || 0;
+    this.holdUntil = performance.now() + hold * 1000;
+    if (hold) setTimeout(() => this.wake(), hold * 1000);
+  }
+
+  wake() {
+    const wake = this.waiting;
+    this.waiting = null;
+    wake?.();
   }
 
   start() {
@@ -70,16 +80,14 @@ export class Arrival {
       for (const phase of [...records.map((r) => r.oldValue), this.app.dataset.phase]) {
         if (phase && phase !== this.phases.at(-1)) this.phases.push(phase);
       }
-      const wake = this.waiting;
-      this.waiting = null;
-      wake?.();
+      this.wake();
     }).observe(this.app, { attributes: true, attributeFilter: ["data-phase"], attributeOldValue: true });
     this.watch();
     this.run();
   }
 
   get ready() {
-    return this.phases.includes("ready");
+    return this.phases.includes("ready") && performance.now() >= this.holdUntil;
   }
 
   async run() {
