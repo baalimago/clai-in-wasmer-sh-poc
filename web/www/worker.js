@@ -29,15 +29,9 @@ await init();
 const certificates = await fetchBytes("./ca-certificates.crt");
 const [programs, list] = await Promise.all([programList(), packageList()]);
 post({ log: `Loading ${[...programs, ...list].map(({ name }) => name).join(", ")}…` });
-post({ log: "Fetching the Go toolchain for /go…" });
-const [programBytes, packages, toolchain] = await Promise.all([
+const [programBytes, packages] = await Promise.all([
   Promise.all(programs.map(({ file }) => fetchBytes(`./${file}`))),
   Promise.all(list.map(({ file }) => fetchBytes(`./packages/${file}`))),
-  // `make go-package` packs it; a page without it still boots, and says so.
-  fetchBytes("./go/go.webc").catch(() => {
-    post({ log: "\x1b[33mNo Go toolchain in this page: run make go-package, then reload.\x1b[0m" });
-    return null;
-  }),
 ]);
 const local = programs.map(({ dir }) => dir === "/usr/local/bin");
 const pick = (items, wantLocal) => items.filter((_, i) => local[i] === wantLocal);
@@ -48,7 +42,7 @@ const shell = await boot(
   pick(programBytes, false),
   pick(names, true),
   pick(programBytes, true),
-  toolchain ? [...packages, toolchain] : packages,
+  packages,
   rows,
   cols,
 );

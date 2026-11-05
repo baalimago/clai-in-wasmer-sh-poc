@@ -147,7 +147,6 @@ const builtins = {
     "cd DIR              change the directory the next lines start in\r\n" +
     "export KEY=VALUE    set a variable for every program, such as OPENAI_API_KEY\r\n" +
     (bash ? "play FILE           play a sound file, such as a recording, in the page\r\n" : "") +
-    (go ? "go <args>           build and run Go in the machine's /go toolchain (~/examples has four)\r\n" : "") +
     "clear               clear the screen"),
   clear: () => term.clear(),
   export: (...assignments) => {
@@ -209,14 +208,6 @@ window.writeFile = (path, text) => serially(() => exec(
   "/bin/bash",
   ["bash", "-c", 'd=${1%/*}; [ "$d" = "$1" ] && d=.; mkdir -p "$d" && printf %s "$2" > "$1"', "write", path, text],
 ));
-// The examples the page ships for Go, in the guest's home before it says it is ready: a tab has
-// something to build before the reader has a way to write a file.
-if (bash) {
-  const { files } = await (await fetch("./examples/index.json")).json();
-  for (const [path, text] of Object.entries(files)) await window.writeFile(`${home}/examples/${path}`, text);
-  const names = [...new Set(Object.keys(files).map((path) => path.split("/")[0]))].join(", ");
-  term.writeln(`\x1b[2mGo examples in \x1b[0m\x1b[1m~/examples\x1b[0m\x1b[2m (${names}). Try \x1b[0m\x1b[1mcd ~/examples/hello && go run .\x1b[0m\r\n`);
-}
 const machine = {
   run: (line, action, extra) => serially(async () => {
     editor.busy = true;
