@@ -26,6 +26,14 @@ const ellipse = (cx, cy, rx, ry) => {
     ` C${pt(cx - k * rx, cy + ry)} ${pt(cx - rx, cy + k * ry)} ${pt(cx - rx, cy)}` +
     ` C${pt(cx - rx, cy - k * ry)} ${pt(cx - k * rx, cy - ry - 3)} ${pt(cx + rx * 0.3, cy - ry + 2)}`;
 };
+// A whole ellipse, as one loop.
+const ellipseRing = (cx, cy, rx, ry) => {
+  const k = 0.5523;
+  return `M${pt(cx, cy - ry)} C${pt(cx + k * rx, cy - ry)} ${pt(cx + rx, cy - k * ry)} ${pt(cx + rx, cy)}` +
+    ` C${pt(cx + rx, cy + k * ry)} ${pt(cx + k * rx, cy + ry)} ${pt(cx, cy + ry)}` +
+    ` C${pt(cx - k * rx, cy + ry)} ${pt(cx - rx, cy + k * ry)} ${pt(cx - rx, cy)}` +
+    ` C${pt(cx - rx, cy - k * ry)} ${pt(cx - k * rx, cy - ry)} ${pt(cx, cy - ry)}`;
+};
 // Splits text into lines of at most `width` letters at spaces, breaking a longer word, in at
 // most `max` lines; the last one ends in "…" if the text is longer still.
 export const wrapWords = (text, width, max) => {
@@ -74,6 +82,18 @@ export const SHAPES = {
   arrow: { w: 120, h: 40, d: () => `M${pt(2, 30)} C${pt(30, 0)} ${pt(60, 44)} ${pt(110, 14)} M${pt(96, 8)} L${pt(112, 13)} L${pt(102, 26)}` },
   flower: { w: 60, h: 60, d: () => { let s = ""; for (let i = 0; i < 6; i++) { const a = (i * Math.PI) / 3; const x = 30 + 16 * Math.cos(a), y = 30 + 16 * Math.sin(a); s += ` M${pt(30, 30, 0.5)} Q${pt(x + 12 * Math.cos(a + 0.9), y + 12 * Math.sin(a + 0.9))} ${pt(30 + 26 * Math.cos(a), 30 + 26 * Math.sin(a))} Q${pt(x + 12 * Math.cos(a - 0.9), y + 12 * Math.sin(a - 0.9))} ${pt(30, 30, 0.5)}`; } return s.trim(); } },
   hash: { w: 44, h: 44, d: () => `M${pt(14, 2)} L${pt(10, 42)} M${pt(32, 2)} L${pt(28, 42)} M${pt(2, 14)} L${pt(42, 14)} M${pt(2, 30)} L${pt(42, 30)}` },
+  heart: { w: 56, h: 50, d: () => `M${pt(28, 48)} C${pt(-6, 26)} ${pt(4, -4)} ${pt(28, 14)} C${pt(52, -4)} ${pt(62, 26)} ${pt(28, 48)}` },
+  smiley: { w: 56, h: 56, d: () => `${ellipseRing(28, 28, 26, 26)} M${pt(19, 20, 0.6)} L${pt(19, 25, 0.6)} M${pt(37, 20, 0.6)} L${pt(37, 25, 0.6)} M${pt(15, 34)} Q${pt(28, 48)} ${pt(41, 34)}` },
+  coffee: { w: 70, h: 64, d: () => `M${pt(8, 24)} L${pt(12, 60)} L${pt(46, 60)} L${pt(50, 24)} Z M${pt(50, 32)} C${pt(66, 30)} ${pt(66, 50)} ${pt(48, 50)}` +
+    ` M${pt(20, 18, 0.6)} C${pt(14, 12, 0.6)} ${pt(26, 8, 0.6)} ${pt(20, 2, 0.6)} M${pt(34, 18, 0.6)} C${pt(28, 12, 0.6)} ${pt(40, 8, 0.6)} ${pt(34, 2, 0.6)}` },
+  house: { w: 60, h: 60, d: () => `M${pt(8, 58)} L${pt(8, 28)} L${pt(30, 6)} L${pt(52, 28)} L${pt(52, 58)} Z M${pt(24, 58)} L${pt(24, 40)} L${pt(36, 40)} L${pt(36, 58)} M${pt(2, 32)} L${pt(30, 4)} L${pt(58, 32)}` },
+  bolt: { w: 40, h: 60, d: () => `M${pt(24, 2)} L${pt(6, 34)} L${pt(20, 34)} L${pt(14, 58)} L${pt(36, 22)} L${pt(22, 22)} L${pt(28, 2)} Z` },
+  tree: { w: 54, h: 66, d: () => `M${pt(27, 4)} L${pt(8, 30)} L${pt(18, 30)} L${pt(4, 50)} L${pt(50, 50)} L${pt(36, 30)} L${pt(46, 30)} Z M${pt(23, 50)} L${pt(23, 64)} L${pt(31, 64)} L${pt(31, 50)}` },
+  note: { w: 48, h: 56, d: () => `M${pt(12, 46)} C${pt(2, 44)} ${pt(4, 56)} ${pt(14, 54)} C${pt(20, 52)} ${pt(18, 46)} ${pt(16, 46)} M${pt(16, 50)} L${pt(16, 8)} L${pt(42, 2)} L${pt(42, 40)} M${pt(38, 38)} C${pt(28, 36)} ${pt(30, 50)} ${pt(40, 46)} C${pt(46, 44)} ${pt(44, 38)} ${pt(42, 38)} M${pt(16, 16)} L${pt(42, 10)}` },
+  cat: { w: 64, h: 56, d: () => `M${pt(8, 24)} L${pt(10, 2)} L${pt(24, 14)} Q${pt(32, 11)} ${pt(40, 14)} L${pt(54, 2)} L${pt(56, 24)} C${pt(62, 52)} ${pt(2, 52)} ${pt(8, 24)} M${pt(22, 28, 0.5)} L${pt(24, 30, 0.5)} M${pt(40, 28, 0.5)} L${pt(42, 30, 0.5)} M${pt(30, 36, 0.5)} L${pt(32, 38, 0.5)} L${pt(34, 36, 0.5)} M${pt(18, 38)} L${pt(-2, 34)} M${pt(18, 41)} L${pt(-2, 44)} M${pt(46, 38)} L${pt(66, 34)} M${pt(46, 41)} L${pt(66, 44)}` },
+  rocket: { w: 48, h: 72, d: () => `M${pt(24, 2)} C${pt(40, 16)} ${pt(38, 40)} ${pt(34, 52)} L${pt(14, 52)} C${pt(10, 40)} ${pt(8, 16)} ${pt(24, 2)} M${pt(14, 40)} L${pt(4, 56)} L${pt(15, 52)} M${pt(34, 40)} L${pt(44, 56)} L${pt(33, 52)} M${pt(30, 24)} A6 6 0 1 1 ${pt(29.9, 23.9, 0)} M${pt(18, 56)} L${pt(16, 68)} M${pt(24, 56)} L${pt(24, 70)} M${pt(30, 56)} L${pt(32, 68)}` },
+  envelope: { w: 70, h: 46, d: () => `M${pt(2, 4)} L${pt(68, 4)} L${pt(68, 44)} L${pt(2, 44)} Z M${pt(2, 4)} L${pt(35, 28)} L${pt(68, 4)}` },
+  zigzag: { w: 150, h: 20, d: () => { let s = `M${pt(0, 18)}`; for (let x = 10; x <= 150; x += 10) s += ` L${pt(x, x % 20 ? 2 : 18)}`; return s; } },
 };
 
 // How a scribbled log line gets marked once it is written.
