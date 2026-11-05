@@ -1,6 +1,6 @@
 // While the machine boots, the login is checked and the notes are fetched, a pen writes each
-// step on the pad and draws a checkbox before it; with nothing else to add it doodles, and as
-// the steps finish it ticks their boxes off one by one. Then an eraser rubs it all out and the
+// step on the pad and draws a checkbox before each; with nothing else to add it doodles, and
+// once everything is done it ticks the boxes off one by one. Then an eraser rubs it all out and the
 // app arrives on the pad: the sticky note is put down (pad.css), and every text of the app is
 // written in by a pen of its own (pen.js), as is text that shows or changes later. Minutes says
 // how far it got in #app's data-phase; the app shows once #app has the class "arrived".
@@ -27,9 +27,9 @@ export function stepsFor(phases) {
   return lines;
 }
 
-// How many of `count` written steps are over: all of them once Minutes is ready, else all
-// but the one under way.
-export const stepsOver = (count, ready) => (ready ? count : Math.max(0, count - 1));
+// How many of `count` boxed steps the pen ticks off: none until Minutes is ready and the pen
+// has doodled at least once, then all of them, one by one.
+export const stepsOver = (count, ready, doodled) => (ready && doodled ? count : 0);
 
 // What a pen writes in when it shows. The sticky note is put down whole instead, and a
 // meeting's notes are handwriting.js's.
@@ -102,6 +102,7 @@ export class Arrival {
     this.list.append(this.ink);
     this.pen = this.pens.pen();
     this.doodles = [];
+    this.doodled = 0;
     const lines = [];
     let seen = 0;
     let flown = false;
@@ -120,7 +121,7 @@ export class Arrival {
         unboxed.box = await this.stroke(this.boxPath(lines.indexOf(unboxed)), 420 * hurry);
         continue;
       }
-      const over = stepsOver(lines.length, this.ready);
+      const over = stepsOver(lines.length, this.ready, this.doodled > 0);
       const due = lines.slice(0, over).find((l) => !l.ticked);
       if (due) {
         due.ticked = true;
@@ -130,6 +131,7 @@ export class Arrival {
       }
       if (this.ready) break;
       await this.doodle(lines.length);
+      this.doodled += 1;
     }
     await this.erase();
   }

@@ -270,10 +270,10 @@ test("the pad writes each loading phase once, in order, and nothing after ready"
   assert.deepEqual(stepsFor(["ready"]), []);
 });
 
-test("a step's box is ticked once the next step began, and every box once Minutes is ready", () => {
-  assert.equal(stepsOver(3, false), 2);
-  assert.equal(stepsOver(3, true), 3);
-  assert.equal(stepsOver(0, false), 0);
+test("the boxes are ticked only once Minutes is ready and the pen has doodled", () => {
+  assert.equal(stepsOver(3, false, true), 0);
+  assert.equal(stepsOver(3, true, false), 0);
+  assert.equal(stepsOver(3, true, true), 3);
 });
 
 test("a pen writes text line by line, the rects of one line taken together", () => {
