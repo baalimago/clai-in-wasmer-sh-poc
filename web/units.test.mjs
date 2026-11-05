@@ -10,7 +10,7 @@ import { groupLines, writingMs } from "./www/pen.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import {
-  DEFAULTS, accountOf, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
+  DEFAULTS, accountOf, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, replyText, signoutResult, splitMessage, summariesIn, unknownSpeakers,
   withoutHeading,
 } from "./www/minutes.js";
@@ -290,4 +290,14 @@ test("a pen takes longer over more text, within bounds", () => {
   assert.equal(writingMs(10), 260);
   assert.ok(writingMs(300) > writingMs(200));
   assert.equal(writingMs(5000), 1700);
+});
+
+test("signed out of slivingdoc, the agent keeps the notes here and does not ask for a sign-in", () => {
+  const local = DEFAULTS.query("Standup", "Ada and Grace", false);
+  assert.match(local, /chose not to sign in to slivingdoc/);
+  assert.match(local, /do not ask the user to sign in/);
+  assert.doesNotMatch(local, /in the slivingdoc notebook/);
+  assert.match(local, /Meeting: Standup\. Ada and Grace$/);
+  assert.match(notebookFormat(true), /in the slivingdoc notebook/);
+  for (const format of [notebookFormat(true), notebookFormat(false)]) assert.match(format, /meetings\/summaries\/<start>_<slug>\.md/);
 });

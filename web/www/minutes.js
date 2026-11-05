@@ -8,17 +8,25 @@ import { notePath, renderMarkdown } from "./markdown.js";
 
 const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
 
-// Where meetings go in the notebook, which the agent reads at the top of its query: its
-// profile and slivingdoc's own settings stay as they are, so the agent works the same
-// elsewhere.
-export const NOTEBOOK_FORMAT =
-  "Notebook format for this app: keep each meeting in the slivingdoc notebook as two files, " +
+// Where meetings go, which the agent reads at the top of its query: its profile and slivingdoc's
+// own settings stay as they are, so the agent works the same elsewhere. Signed out of
+// slivingdoc, the notes stay in the browser's notebook, and that is the user's choice: the agent
+// neither looks for slivingdoc nor asks them to sign in.
+const MEETING_FILES =
   "meetings/summaries/<start>_<slug>.md and meetings/transcripts/<start>_<slug>.md, " +
   "<start> in the form 2026-10-30T08-00Z. Begin each with front matter holding title, date " +
   "(ISO 8601) and duration (minutes). Record with audio_record's dir set to /tmp/recordings, " +
   "so the audio stays out of the notebook. Name a speaker only when the recording makes clear who " +
   "it is; otherwise keep the transcription's labels (Speaker A, Speaker B) and do not ask: the app " +
   "asks the user who they are.";
+
+export function notebookFormat(connected) {
+  return connected
+    ? `Notebook format for this app: keep each meeting in the slivingdoc notebook as two files, ${MEETING_FILES}`
+    : "Notebook format for this app: the user keeps their notes on this machine and chose not to sign in to " +
+      "slivingdoc. Do not use slivingdoc, do not mention it and do not ask the user to sign in. Write each " +
+      `meeting as two files in the current directory, which is the notebook: ${MEETING_FILES}`;
+}
 
 export const DEFAULTS = {
   // No version tag: the hub serves the profile's latest release.
@@ -29,8 +37,8 @@ export const DEFAULTS = {
   // The slivingdoc space meetings go to, when the login has it.
   space: "notes",
   // The agent's query: the format, then the meeting.
-  query: (title, details) =>
-    `${NOTEBOOK_FORMAT}\n\nMeeting: ${title}.${details ? ` ${details}` : ""}`,
+  query: (title, details, connected) =>
+    `${notebookFormat(connected)}\n\nMeeting: ${title}.${details ? ` ${details}` : ""}`,
 };
 
 // Front matter fields of a markdown file, and its body.
@@ -619,7 +627,7 @@ export class Minutes {
     this.recording = { title, startedAt: new Date(), started: null, stages: new Set() };
     this.show("meeting");
     await this.showRecording(null);
-    const line = this.agentLine(this.config.query(title, details), false);
+    const line = this.agentLine(this.config.query(title, details, this.connected), false);
     const unwatch = this.watchStages("Record");
     const { status, body } = await this.run("Record", line, {
       topic: "reply",
