@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import { Machine, describe, label, mask } from "./www/hood.js";
 import { notePath, renderMarkdown } from "./www/markdown.js";
+import { STEPS, stepsFor } from "./www/arrival.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import {
@@ -260,3 +261,10 @@ test("a note's own Summary or Transcript heading goes, the card has one", () => 
   assert.equal(withoutHeading("- Ship it\n## Summary", "summary"), "- Ship it\n## Summary");
 });
 
+
+test("the pad writes each loading phase once, in order, and nothing after ready", () => {
+  assert.deepEqual(stepsFor(["booting", "checking", "checking", "fetching", "ready", "listing"]),
+    [STEPS.booting, STEPS.checking, STEPS.fetching]);
+  assert.deepEqual(stepsFor(["booting", "listing", "ready"]), [STEPS.booting, STEPS.listing]);
+  assert.deepEqual(stepsFor(["ready"]), []);
+});

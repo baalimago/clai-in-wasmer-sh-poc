@@ -331,28 +331,40 @@ export class Minutes {
     return this.env.has("SLIVINGDOC_TOKEN") || this.login !== null;
   }
 
-  // Puts back the slivingdoc login this browser kept, then lists the notebook.
+  // Puts back the slivingdoc login this browser kept, then lists the notebook. #app's
+  // data-phase says how far it got (arrival.js writes it on the pad): checking, then fetching
+  // or listing, then ready, whatever failed on the way.
   async start() {
-    // The key this browser kept, so a return to the site needs no paste.
-    const key = this.store.get(STORED_KEY);
-    if (key) this.env.set("OPENAI_API_KEY", key);
-    const credentials = this.store.get(STORED_LOGIN);
-    if (credentials) {
-      const line = `mkdir -p ~/.config/slivingdoc && printf '%s' "$SLIVINGDOC_CREDENTIALS" > ${CREDENTIALS}`;
-      const { status } = await this.run("Restore the slivingdoc login", line, {
-        followUp: true, env: { SLIVINGDOC_CREDENTIALS: compact(credentials) },
-      });
-      if (status === 0) this.login = accountOf(credentials) ?? "signed in";
+    this.phase("checking");
+    try {
+      // The key this browser kept, so a return to the site needs no paste.
+      const key = this.store.get(STORED_KEY);
+      if (key) this.env.set("OPENAI_API_KEY", key);
+      const credentials = this.store.get(STORED_LOGIN);
+      if (credentials) {
+        const line = `mkdir -p ~/.config/slivingdoc && printf '%s' "$SLIVINGDOC_CREDENTIALS" > ${CREDENTIALS}`;
+        const { status } = await this.run("Restore the slivingdoc login", line, {
+          followUp: true, env: { SLIVINGDOC_CREDENTIALS: compact(credentials) },
+        });
+        if (status === 0) this.login = accountOf(credentials) ?? "signed in";
+      }
+      const trust = this.store.get(STORED_TRUST);
+      if (trust) {
+        const line = `mkdir -p "$(clai confdir)" && printf '%s' "$CLAI_TRUST" > ${TRUST}`;
+        const { status } = await this.run("Restore the agent's trust", line, { followUp: true, env: { CLAI_TRUST: compact(trust) } });
+        if (status === 0) this.trusted = this.store.get(STORED_TRUST + ".profile");
+      }
+      this.render();
+      if (this.login) await this.checkSpace();
+      this.phase(this.connected && !this.spaces ? "fetching" : "listing");
+      await this.refresh(true);
+    } finally {
+      this.phase("ready");
     }
-    const trust = this.store.get(STORED_TRUST);
-    if (trust) {
-      const line = `mkdir -p "$(clai confdir)" && printf '%s' "$CLAI_TRUST" > ${TRUST}`;
-      const { status } = await this.run("Restore the agent's trust", line, { followUp: true, env: { CLAI_TRUST: compact(trust) } });
-      if (status === 0) this.trusted = this.store.get(STORED_TRUST + ".profile");
-    }
-    this.render();
-    if (this.login) await this.checkSpace();
-    await this.refresh(true);
+  }
+
+  phase(name) {
+    this.root.dataset.phase = name;
   }
 
   get needsTrust() {
@@ -791,27 +803,49 @@ export class Minutes {
     this.renderRecording();
   }
 
+  // Keeps the entries it drew before, so only a meeting new to the list is written in (pad.css
+  // animates .fresh entries, in the order of --i).
   renderList() {
     const list = this.$("#meetings");
-    list.replaceChildren();
+    const drawn = new Map([...list.children].map((el) => [el.dataset.key, el]));
+    const nodes = [];
+    let fresh = 0;
+    const entry = (key, make) => {
+      let el = drawn.get(key);
+      if (!el) {
+        el = make();
+        el.dataset.key = key;
+        el.classList.add("fresh");
+        el.style.setProperty("--i", fresh++);
+        el.addEventListener("animationend", () => el.classList.remove("fresh"), { once: true });
+      }
+      nodes.push(el);
+      return el;
+    };
     for (const { label, items } of groupMeetings(this.meetings)) {
-      const head = document.createElement("div");
-      head.className = "sidehead";
-      head.textContent = label;
-      list.append(head);
+      entry(`group:${label}`, () => {
+        const head = document.createElement("div");
+        head.className = "sidehead";
+        head.textContent = label;
+        return head;
+      });
       for (const meeting of items) {
-        const button = document.createElement("button");
-        button.className = "meeting";
+        const button = entry(`meeting:${meeting.path}`, () => {
+          const button = document.createElement("button");
+          button.className = "meeting";
+          button.append(document.createElement("strong"), document.createElement("span"));
+          return button;
+        });
+        const [title, meta] = button.children;
+        if (title.textContent !== meeting.title) title.textContent = meeting.title;
+        const when = meetingMeta(meeting);
+        if (meta.textContent !== when) meta.textContent = when;
         if (this.current?.path === meeting.path) button.setAttribute("aria-current", "true");
-        const title = document.createElement("strong");
-        title.textContent = meeting.title;
-        const meta = document.createElement("span");
-        meta.textContent = meetingMeta(meeting);
-        button.append(title, meta);
+        else button.removeAttribute("aria-current");
         button.onclick = () => this.open(meeting);
-        list.append(button);
       }
     }
+    if (nodes.length !== list.children.length || nodes.some((el, i) => list.children[i] !== el)) list.replaceChildren(...nodes);
     this.$("#empty").hidden = this.meetings.length > 0;
   }
 

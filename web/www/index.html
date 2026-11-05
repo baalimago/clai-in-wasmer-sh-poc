@@ -23,7 +23,7 @@
   </div>
 </header>
 <main class="stage">
-  <section class="app" id="app" aria-label="Minutes">
+  <section class="app" id="app" aria-label="Minutes" data-phase="booting" aria-busy="true">
     <nav class="sidebar" aria-label="Meetings">
       <button id="new" class="primary new">
         <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor"/></svg>
@@ -44,6 +44,7 @@
     </nav>
 
     <div class="content">
+      <ol id="loading" class="loading" aria-label="Opening the notebook" aria-live="polite"></ol>
       <div id="setup" class="setup">
         <form id="key-form" class="card">
           <label for="key-input"><strong>OpenAI API key</strong></label>
@@ -204,3 +205,4 @@
 <div class="players"></div>
 <script type="module" src="./main.js"></script>
 <script type="module" src="./handwriting.js"></script>
+<script type="module" src="./arrival.js"></script>

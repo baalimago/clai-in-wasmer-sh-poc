@@ -154,3 +154,94 @@ body, .top { background: var(--pad-paper); }
 
 /* The notebook's history is what the agent's tools print; the saved path says enough. */
 #history, #history-list, #saved .history-sep { display: none; }
+
+/* Opening the notebook: arrival.js writes each step of the loading on the pad, taps the pencil
+   beside it while it lasts, ticks it off, and rubs the list out. Until then the app stays off
+   the pad, so nothing snaps into place as the login is checked and the notes are listed. */
+#app:not(.arrived) :is(.setup, #status, .content > [data-view], #meetings, #empty, .notebook, .sidebar > #new) { display: none !important; }
+.loading { position: absolute; left: 110px; top: calc(var(--rule) * 3); z-index: 4; width: max-content; margin: 0; padding: 0; list-style: none; font: 26px/var(--rule) var(--hand); color: var(--pad-ink); pointer-events: none; }
+.loading li { position: relative; width: max-content; height: var(--rule); text-shadow: 0 0 .4px rgba(60, 60, 60, .5); }
+.loading .ink { display: inline-block; }
+.loading .tick { position: absolute; left: 100%; top: 2px; width: 30px; height: 24px; margin-left: 12px; overflow: visible; }
+.loading .tick path { fill: none; stroke: var(--pad-accent); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 36; stroke-dashoffset: 36; }
+.loading .done .tick path { stroke-dashoffset: 0; transition: stroke-dashoffset .24s ease-out; }
+.loader-pencil {
+  position: absolute; left: 0; top: 0; width: 138px; height: 12px; opacity: 0; transition: opacity .2s;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='230' height='20' viewBox='0 0 230 20'%3E%3Cpath d='M1 10 L30 2 L30 18 Z' fill='%23e8c592'/%3E%3Cpath d='M1 10 L9 7.8 L9 12.2 Z' fill='%23333'/%3E%3Crect x='30' y='2' width='160' height='16' fill='%23f5c430'/%3E%3Crect x='30' y='2' width='160' height='5' fill='%23ffd95a'/%3E%3Crect x='30' y='13' width='160' height='5' fill='%23d9a514'/%3E%3Crect x='190' y='1' width='16' height='18' fill='%23b9bcc2'/%3E%3Crect x='206' y='2' width='22' height='16' rx='3' fill='%23e98a8f'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
+  filter: drop-shadow(10px 14px 5px rgba(40, 30, 10, .28));
+}
+.loader-pencil.writing, .loader-pencil.tapping { opacity: 1; }
+.loader-pencil { margin-top: -6px; transform-origin: 0 50%; }
+.loader-pencil.tapping { animation: pencil-tap .9s ease-in-out infinite; }
+.erasing .loader-pencil { opacity: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .loading .ink { animation: write-in var(--ms) linear both; }
+  .erasing li { animation: rub-out .5s ease-in forwards; }
+  .erasing li:nth-of-type(2) { animation-delay: .12s; }
+  .erasing li:nth-of-type(3) { animation-delay: .24s; }
+  .eraser {
+    position: absolute; left: 0; top: 0; width: 64px; height: 30px; border-radius: 5px;
+    background: linear-gradient(90deg, #f0a3a6 0 52%, #3f6fb5 52% 100%); box-shadow: 0 10px 14px -4px rgba(60, 40, 10, .35), inset 0 -4px 0 rgba(0, 0, 0, .12);
+    animation: erase .9s ease-in-out forwards;
+  }
+
+  /* The pad is put on the desk. */
+  .content { animation: pad-down .6s cubic-bezier(.2, .8, .2, 1) backwards; }
+  .chip, .chips > button { animation: ink-in .5s ease-out backwards; }
+  .chips > :nth-child(2) { animation-delay: .1s; }
+  .chips > :nth-child(3) { animation-delay: .2s; }
+  .chips > :nth-child(5) { animation-delay: .3s; }
+
+  /* Then the app arrives: the sticky note is put down from off the pad and taped, the forms and
+     the meetings are written in one line after the other. These play again whenever one of them
+     shows after being hidden. */
+  #notebook-card { animation: sticky-put .95s cubic-bezier(.25, .75, .3, 1) .1s backwards; }
+  #notebook-card::before { animation: tape-on .28s cubic-bezier(.3, 1.4, .5, 1) .95s backwards; }
+  .setup > .card:not(#notebook-card) > *, [data-view=record] > h1, [data-view=record] .card > *, .notebook > *, #empty {
+    animation: ink-in .45s ease-out backwards;
+  }
+  [data-view=record] > h1 { animation-duration: .7s; animation-delay: .25s; }
+  :is(.setup > .card:not(#notebook-card), [data-view=record] .card, .notebook) > :nth-child(1) { animation-delay: .35s; }
+  :is(.setup > .card:not(#notebook-card), [data-view=record] .card, .notebook) > :nth-child(2) { animation-delay: .45s; }
+  :is(.setup > .card:not(#notebook-card), [data-view=record] .card, .notebook) > :nth-child(3) { animation-delay: .55s; }
+  :is(.setup > .card:not(#notebook-card), [data-view=record] .card, .notebook) > :nth-child(4) { animation-delay: .65s; }
+  :is(.setup > .card:not(#notebook-card), [data-view=record] .card, .notebook) > :nth-child(5) { animation-delay: .75s; }
+  :is(.setup > .card:not(#notebook-card), [data-view=record] .card, .notebook) > :nth-child(6) { animation-delay: .85s; }
+  :is(.setup > .card:not(#notebook-card), [data-view=record] .card, .notebook) > :nth-child(n+7) { animation-delay: .95s; }
+  .notebook > * { animation-delay: .6s; }
+  #empty { animation-delay: .3s; }
+  .sidebar > #new { animation: stamp .4s cubic-bezier(.3, 1.5, .5, 1) backwards; }
+  .meeting.fresh, .sidehead.fresh { animation: ink-in .5s ease-out backwards; animation-delay: calc(.3s + var(--i) * .28s); }
+  .status { animation: ink-in .45s ease-out backwards; }
+  .top .rewritten, #app .rewritten { animation: ink-again .45s ease-out; }
+}
+
+@keyframes write-in { from { clip-path: inset(-10px 100% -10px -6px); } to { clip-path: inset(-10px -6px -10px -6px); } }
+@keyframes ink-in { from { clip-path: inset(-12px 100% -12px -12px); opacity: .25; filter: blur(.6px); } to { clip-path: inset(-12px -12px -12px -12px); opacity: 1; filter: none; } }
+@keyframes ink-again { from { clip-path: inset(-12px 100% -12px -12px); opacity: .25; } to { clip-path: inset(-12px -12px -12px -12px); opacity: 1; } }
+@keyframes pencil-tap { 0%, 100% { margin-top: -6px; } 40% { margin-top: -14px; } 55% { margin-top: -5px; } }
+@keyframes rub-out {
+  30% { opacity: .75; filter: blur(.5px); transform: translateX(-2px); }
+  60% { opacity: .35; filter: blur(1.2px); transform: translateX(3px); }
+  to { opacity: 0; filter: blur(2px); transform: translateX(0); }
+}
+@keyframes erase {
+  0% { opacity: 0; transform: translate(-30px, -20px) rotate(-24deg); }
+  10% { opacity: 1; transform: translate(0, 0) rotate(-18deg); }
+  25% { transform: translate(var(--far, 380px), 6px) rotate(-14deg); }
+  40% { transform: translate(20px, 28px) rotate(-20deg); }
+  55% { transform: translate(var(--far, 380px), 40px) rotate(-14deg); }
+  70% { transform: translate(30px, 64px) rotate(-20deg); }
+  85% { opacity: 1; transform: translate(var(--far, 380px), 72px) rotate(-12deg); }
+  100% { opacity: 0; transform: translate(calc(var(--far, 380px) + 80px), 30px) rotate(-6deg); }
+}
+@keyframes pad-down { from { opacity: 0; transform: translateY(28px) rotate(.5deg); } }
+@keyframes sticky-put {
+  0% { transform: translate(260px, -110vh) rotate(16deg) scale(1.08); box-shadow: 0 60px 60px -10px rgba(90, 50, 10, .3); }
+  70% { transform: translate(-6px, 10px) rotate(-3.5deg) scale(1.04); box-shadow: 0 30px 40px -10px rgba(90, 50, 10, .35); }
+  85% { transform: translate(2px, -2px) rotate(-.6deg) scale(1); }
+  100% { transform: rotate(-1.2deg); }
+}
+@keyframes tape-on { from { opacity: 0; transform: translateY(-14px) rotate(-8deg) scale(1.4); } }
+@keyframes stamp { from { opacity: 0; transform: scale(1.35) rotate(-3deg); } }
