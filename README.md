@@ -25,6 +25,27 @@ It also checks that the under-the-hood view sees what a line does, and runs the 
 Record button through to the agent's reply. `web/units.test.mjs` covers the page's logic that
 needs no browser.
 
+## Hosting it on Wasmer Edge
+
+The page needs no server of its own: the machine's HTTP goes out as the page's `fetch` calls, and
+OpenAI's API and slivingdoc's both answer a browser's CORS preflight. So it is a static site:
+
+```sh
+make dist        # dist/: the site, 155 MB of it in dist/public
+make check-dist  # the dist in headless Chromium, served with only the headers Edge will send
+cd dist && wasmer deploy
+```
+
+`dist/` is `edge/` (a `wasmer.toml` that serves `public` with `wasmer/static-web-server`, its
+`settings/config.toml`, and an `app.yaml`) and `dist/public`, which is `web/www` and the three
+packages it loads from `node_modules`. The one thing the site must send is a pair of headers,
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`,
+which make the page cross-origin isolated so that guest memory can be a `SharedArrayBuffer`;
+`edge/settings/config.toml` adds them to every file. The same package runs locally with
+`wasmer run dist --publish 8080:8080` (the `wasmer` of `components/wasmer`; a released `wasmer`
+takes `--net` instead), and `DIST_URL=http://127.0.0.1:8080/ node web/check-dist.mjs` checks it. Edge
+takes up to 500 MB of files per app.
+
 ## Minutes, and under the hood
 
 The page is **Minutes**, a meeting-notes app. **Peek under the hood** opens the machine it runs

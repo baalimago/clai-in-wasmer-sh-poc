@@ -1,0 +1,4 @@
+# `wasmer deploy` in dist/ asks for the owner on the first deploy and writes it here.
+kind: wasmer.io/App.v0
+name: clai-minutes
+package: .

@@ -1,0 +1,16 @@
+[general]
+host = "::"
+port = 8080
+root = "/public"
+log-level = "warn"
+
+[advanced]
+
+# Cross-origin isolated, as web/server.mjs serves the page: guest memory is a SharedArrayBuffer
+# that a process's threads share, which a browser only allows a page with both headers. The
+# page's own requests to a model or to slivingdoc are CORS requests, which these leave alone.
+[[advanced.headers]]
+source = "**"
+[advanced.headers.headers]
+Cross-Origin-Opener-Policy = "same-origin"
+Cross-Origin-Embedder-Policy = "require-corp"

@@ -16,7 +16,7 @@ RUSTUP_HOME ?= $(if $(wildcard $(HOME)/.rustup/toolchains/*),$(HOME)/.rustup,$(H
 CARGO := $(CARGO_HOME)/bin/cargo
 export CARGO_HOME RUSTUP_HOME
 
-.PHONY: poc serve check build packages submodules clean FORCE
+.PHONY: poc serve check build dist check-dist packages submodules clean FORCE
 
 # The page's own crate needs Rust; say so in words a first-time reader can act on.
 CARGO_MISSING = @test -x $(CARGO) || { echo "no cargo at $(CARGO): install rustup, see Prerequisites in README.md"; exit 1; }
@@ -34,6 +34,26 @@ check: build
 
 build: $(WWW)/clai.wasm $(WWW)/bin/index.json $(WWW)/ca-certificates.crt $(WWW)/pkg/clai_web.js \
 	$(WWW)/packages/index.json $(WEB)/node_modules
+
+# The page as a static site for Wasmer Edge, in dist/: edge/'s wasmer.toml, app.yaml and
+# static-web-server settings, and in dist/public the page, what it loads from node_modules (the
+# packages web/server.mjs serves) and nothing of the check's. `cd dist && wasmer deploy` puts it
+# on Edge.
+DIST := $(CURDIR)/dist
+NODE_PACKAGES := @xterm @fontsource marked
+
+dist: build
+	rm -rf $(DIST)
+	mkdir -p $(DIST)/public/node_modules
+	cp -R edge/. $(DIST)/
+	cp -R $(WWW)/. $(DIST)/public/
+	cd $(WEB)/node_modules && cp -R $(NODE_PACKAGES) $(DIST)/public/node_modules/
+	@du -sh $(DIST)/public
+
+# The dist as Edge serves it, in headless Chromium (web/check-dist.mjs). DIST_URL=... checks a
+# site that is already up instead, such as the deployed app.
+check-dist: dist
+	cd $(WEB) && node check-dist.mjs
 
 # The page's crate builds against components/wasmer, whose workspace needs two of its own
 # submodules; its test suites' submodules stay out.
@@ -165,5 +185,5 @@ $(WEB)/node_modules: $(WEB)/package-lock.json
 	touch $@
 
 clean:
-	rm -rf $(WEB)/target $(WWW)/pkg $(WWW)/packages $(WWW)/bin $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WEB)/node_modules .tools .build
+	rm -rf $(DIST) $(WEB)/target $(WWW)/pkg $(WWW)/packages $(WWW)/bin $(WWW)/clai.wasm $(WWW)/ca-certificates.crt $(WEB)/node_modules .tools .build
 	cd components/go/src && ./clean.bash
