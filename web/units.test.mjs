@@ -9,6 +9,7 @@ import { STEPS, stepsFor, stepsOver } from "./www/arrival.js";
 import { groupLines, writingMs } from "./www/pen.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
+import { AudioInputs } from "./www/audio.js";
 import {
   DEFAULTS, accountOf, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, replyText, signoutResult, splitMessage, summariesIn, unknownSpeakers,
@@ -300,4 +301,90 @@ test("signed out of slivingdoc, the agent keeps the notes here and does not ask 
   assert.match(local, /Meeting: Standup\. Ada and Grace$/);
   assert.match(notebookFormat(true), /in the slivingdoc notebook/);
   for (const format of [notebookFormat(true), notebookFormat(false)]) assert.match(format, /meetings\/summaries\/<start>_<slug>\.md/);
+});
+
+test("the agent records the computer's audio with the mic only when asked to", () => {
+  const call = DEFAULTS.query("Standup", "", false, true);
+  assert.match(call, /mic: true and sinks: "default"/);
+  assert.match(call, /Meeting: Standup\.$/);
+  const room = DEFAULTS.query("Standup", "", false, false);
+  assert.match(room, /mic: true and sinks: "none"/);
+  assert.doesNotMatch(room, /sinks: "default"/);
+});
+
+// A MediaStream's stand-in: its tracks, and whether they were stopped.
+const fakeStream = (kinds = ["audio", "video"]) => {
+  const tracks = kinds.map((kind) => ({ kind, stopped: false, stop() { this.stopped = true; } }));
+  return { tracks, getTracks: () => tracks, getAudioTracks: () => tracks.filter((t) => t.kind === "audio") };
+};
+
+// The browser's media devices, recording what was asked of them.
+const fakeMedia = (devices, display = async () => fakeStream()) => {
+  const asked = [];
+  return {
+    asked,
+    getUserMedia: async (constraints) => (asked.push(["user", constraints]), fakeStream(["audio"])),
+    getDisplayMedia: (constraints) => (asked.push(["display", constraints]), display()),
+    enumerateDevices: async () => devices.map((d) => ({ kind: "audioinput", ...d })),
+  };
+};
+
+// An AudioContext's stand-in for AudioInputs.start: enough to wire a capture node.
+const fakeAudio = () => {
+  const node = () => ({ connect() {}, disconnect() {}, port: {} });
+  globalThis.AudioWorkletNode = function () { return node(); };
+  return class {
+    constructor() { this.destination = node(); this.audioWorklet = { addModule: async () => {} }; }
+    resume = async () => {};
+    close = async () => {};
+    createMediaStreamSource = () => node();
+  };
+};
+
+const inputs = (media, offers = []) => {
+  const notices = [];
+  const audio = new AudioInputs(() => {}, (t) => notices.push(t), (share) => offers.push(share), () => {}, { media, Context: fakeAudio() });
+  return { audio, notices, offers };
+};
+
+test("a click shares the computer's audio up front, which the tab input then records", async () => {
+  const media = fakeMedia([{ deviceId: "default", label: "Default - Mic" }]);
+  const { audio, offers } = inputs(media);
+  await audio.discover();
+  assert.equal(audio.shareAhead(), "asked");
+  const [[, constraints]] = media.asked.filter(([kind]) => kind === "display");
+  assert.equal(constraints.systemAudio, "include");
+  await audio.want(["mic", "tab"]);
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(offers, [], "no button: the share came with the click");
+  assert.ok(audio.inputs().find((i) => i.name === "tab").live);
+  await audio.want([]);
+});
+
+test("where a monitor of the computer's output is an input, no share is asked for", async () => {
+  const media = fakeMedia([{ deviceId: "default", label: "Default - Mic" }, { deviceId: "m", label: "Monitor of Built-in Audio" }]);
+  const { audio } = inputs(media);
+  await audio.discover();
+  assert.equal(audio.shareAhead(), "monitor");
+  assert.equal(media.asked.filter(([kind]) => kind === "display").length, 0);
+});
+
+test("a share turned down puts the button up, to ask again", async () => {
+  const media = fakeMedia([], async () => { throw new Error("Permission denied"); });
+  const { audio, offers, notices } = inputs(media);
+  audio.shareAhead();
+  await audio.want(["tab"]);
+  await new Promise((r) => setTimeout(r));
+  assert.equal(offers.length, 1);
+  assert.equal(typeof offers[0], "function");
+  assert.match(notices.join(), /Permission denied/);
+  await audio.want([]);
+});
+
+test("a share the agent never opens is stopped when the recording ends", async () => {
+  const stream = fakeStream();
+  const { audio } = inputs(fakeMedia([], async () => stream));
+  audio.shareAhead();
+  await audio.dropShared();
+  assert.ok(stream.tracks.every((t) => t.stopped));
 });

@@ -217,3 +217,11 @@ body, .top { background: var(--pad-paper); }
 }
 @keyframes tape-on { from { opacity: 0; transform: translateY(-14px) rotate(-8deg) scale(1.4); } }
 @keyframes stamp { from { opacity: 0; transform: scale(1.35) rotate(-3deg); } }
+
+/* A box drawn in pencil before its line, ticked in red like the loading steps. */
+.content label.tickbox { display: flex; align-items: center; gap: 10px; font-weight: 400; cursor: pointer; }
+.tickbox input { appearance: none; flex: none; width: 22px; height: 20px; padding: 0; margin: 0; cursor: pointer;
+  background: none; border: 2px solid var(--pad-ink); border-radius: 3px 6px 2px 5px / 5px 2px 6px 3px; transform: rotate(-2deg); }
+.content .tickbox input:focus { background: none; }
+.tickbox input:focus-visible { outline: 2px dashed var(--pad-accent); outline-offset: 3px; }
+.tickbox input:checked { background: no-repeat center / 26px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 13c2 1 4 4 6 7 3-7 7-12 13-17' fill='none' stroke='%23c0392b' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); overflow: visible; }

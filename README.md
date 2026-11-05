@@ -54,9 +54,9 @@ Nothing the app does needs the peek; its buttons run programs on the machine dir
 
 | Button | Runs |
 | --- | --- |
-| Start recording | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook` |
+| Start recording | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\n<inputs>\n\nMeeting: <title>. <details>'`, in `~/notebook`. `<inputs>` is the mic alone, or the mic and the default sink when **Record the computer's audio too** is ticked (kept in the browser) |
 | Stop and summarize | types Enter on the console, which ends clai's `audio_record` |
-| Share a tab | asks the browser for the tab whose audio the recording takes (shown while the agent records a tab) |
+| Share computer audio | asks the browser again for the screen or tab whose audio the recording takes, when the share asked for by Start recording was turned down |
 | Send (answer the agent) | the same `clai`, with `-re` and the answer as the query |
 | A meeting | `cat` of its summary and transcript, rendered as markdown |
 | history | `slivingdoc log` |
@@ -144,7 +144,7 @@ browser tab
 | `audio/play.sh` | `play FILE`: writes the file to `/run/audio/play`, and the page plays it in a player at the bottom right |
 | `audio/ffmpeg.sh` | The `ffmpeg` in `/usr/local/bin`: lists and opens the page's audio inputs as PulseAudio devices, and stops a recording cleanly |
 | `web/src/audio.rs` | `/run/audio`: the page's audio inputs as files that stream while they are open |
-| `web/www/audio.js` | Captures the microphone and a shared tab's audio for those files |
+| `web/www/audio.js` | Captures the microphone and a shared screen's or tab's audio for those files |
 | `web/src/lib.rs` | The machine: boots once per page with the CA bundle mounted and clai and the packages in `/bin`, compiles each program once, runs a file as often as asked |
 | `web/src/net.rs`, `web/src/names.rs` | The machine's sockets: name lookups answered with addresses the page hands out, and every connection refused with the reason |
 | `web/src/host.rs`, `web/src/jshttp.rs` | The page as the machine's host: `http-open`, one whole request and its streamed response per descriptor, over the same `fetch` |
@@ -258,7 +258,7 @@ with SIGINT. In the page:
 | Input | pulse name | What it records |
 | --- | --- | --- |
 | `/run/audio/mic` | `browser-mic` | The browser's default microphone |
-| `/run/audio/tab` | `browser-tab.monitor` | The audio of a tab, window or screen: a button asks you to pick one (a meeting's tab, say). Until you do, it records silence |
+| `/run/audio/tab` | `browser-tab.monitor` | The audio of a screen, window or tab, which Start recording asks the browser for when the computer's audio is ticked (a button asks again if it is turned down). Until one is shared, it records silence |
 | `/run/audio/devN` | `browser-devN`, or `browser-devN.monitor` | Each other audio input of the browser's. On Linux, PipeWire and PulseAudio offer each output's "Monitor of ..." as one, which holds what the computer plays, a meeting app's audio included: it is a sink's monitor here too, and the first is the default sink |
 
 The page asks for the microphone when it loads, which is what lets the browser name its audio
@@ -273,6 +273,23 @@ pactl load-module module-remap-source master="$(pactl get-default-sink).monitor"
 ```
 
 The page adds it when it appears, with no reload. Firefox lists monitors as they are.
+
+The computer's audio, by browser (a monitor input, where there is one, is used instead and needs
+no share):
+
+| Browser | Share the whole screen | Share a tab |
+| --- | --- | --- |
+| Chrome, Edge on Windows and ChromeOS | carries what the computer plays ("Also share system audio") | carries the tab's audio |
+| Chrome on macOS | carries it from Chrome 141 on macOS 14.2 and later (reported, not in Chrome's notes); no audio before | carries the tab's audio |
+| Chrome on Linux | depends on the version: when the picker offers no system audio, share the tab that plays, or add the monitor above | carries the tab's audio |
+| Firefox | no audio | no audio; on Linux the monitor inputs carry it |
+| Safari | no audio | no audio |
+
+Browsers ask for a share each time and only from a click. For debugging, Chromium skips the
+prompts with `--auto-select-desktop-capture-source="Entire screen"` (or
+`--auto-select-tab-capture-source-by-title=YouTube`) and `--use-fake-ui-for-media-stream`, in a
+throwaway profile (`--user-data-dir=$(mktemp -d)`); on Linux the monitor above needs only the
+microphone's permission, which the browser keeps.
 
 The page captures an input only while ffmpeg has its file open, at 48 kHz on one `AudioContext`,
 so a mic and tab recording stay in step. `/usr/local/bin/ffmpeg` (`audio/ffmpeg.sh`) answers

@@ -37,12 +37,17 @@ registerProcessor("capture", Capture);
 export class AudioInputs {
   // `send(name, bytes)` hands captured samples to the machine; `notice(text)` tells the user;
   // `offer(share)` puts a button up that calls `share` (from a click: the browser asks for
-  // the tab), and `offer(null)` takes it down. `changed()` follows what is captured.
-  constructor(send, notice, offer, changed = () => {}) {
+  // the tab), and `offer(null)` takes it down. `changed()` follows what is captured. `media` and
+  // `Context` are the browser's mediaDevices and AudioContext.
+  constructor(send, notice, offer, changed = () => {}, { media = globalThis.navigator?.mediaDevices, Context = globalThis.AudioContext } = {}) {
     this.send = send;
     this.notice = notice;
     this.offer = offer;
     this.changed = changed;
+    this.media = media;
+    this.Context = Context;
+    // The share asked for with the click that started a recording, which "tab" records once open.
+    this.shared = null;
     this.context = null;
     this.ready = null;
     this.active = new Map();
@@ -56,14 +61,14 @@ export class AudioInputs {
   async discover() {
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await this.media.getUserMedia({ audio: true });
     } catch (error) {
       this.notice(`no microphone: ${error.message}`);
       return [];
     }
     const trackLabel = stream.getAudioTracks()[0]?.label ?? "";
     stream.getTracks().forEach((t) => t.stop());
-    const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+    const inputs = (await this.media.enumerateDevices()).filter((d) => d.kind === "audioinput");
     // Chrome lists the default again as "Default - <its label>".
     const preferred = inputs.find((d) => d.deviceId === "default")?.label.replace(/^Default - /, "") ?? trackLabel;
     const found = [{ name: "mic", label: preferred || "Microphone (browser)" }];
@@ -106,7 +111,7 @@ export class AudioInputs {
     const input = { node: null, source: null, stream: null };
     this.active.set(name, input);
     if (!this.context) {
-      this.context = new AudioContext({ sampleRate: SAMPLE_RATE });
+      this.context = new this.Context({ sampleRate: SAMPLE_RATE });
       const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
       this.ready = this.context.audioWorklet.addModule(url);
     }
@@ -118,25 +123,32 @@ export class AudioInputs {
     input.node.port.onmessage = ({ data }) => this.send(name, new Uint8Array(data));
     // Silent: the node only runs while something pulls on it.
     input.node.connect(context.destination);
-    if (name === "mic") this.attach(name, input, navigator.mediaDevices.getUserMedia({ audio: true }));
-    if (name === "tab") this.offerTab(name, input);
+    if (name === "mic") this.attach(name, input, this.media.getUserMedia({ audio: true }));
+    if (name === "tab") {
+      const shared = this.shared;
+      this.shared = null;
+      if (shared) this.attach(name, input, shared, () => this.offerTab(name, input));
+      else this.offerTab(name, input);
+    }
     const device = this.devices.get(name);
     if (device) {
       // A monitor carries what the computer plays: as it is, without a microphone's processing.
       const raw = device.label.startsWith("Monitor of ");
-      this.attach(name, input, navigator.mediaDevices.getUserMedia({
+      this.attach(name, input, this.media.getUserMedia({
         audio: { deviceId: { exact: device.deviceId }, echoCancellation: !raw, noiseSuppression: !raw, autoGainControl: !raw },
       }));
     }
     this.changed();
   }
 
-  async attach(name, input, request) {
+  // `retry()`, when the request fails, asks again.
+  async attach(name, input, request, retry = null) {
     let stream;
     try {
       stream = await request;
     } catch (error) {
-      this.notice(`no ${name === "tab" ? "shared audio" : this.label(name)}: ${error.message}; recording silence`);
+      this.notice(`no ${name === "tab" ? "shared audio" : this.label(name)}: ${error.message}; ${retry ? "share it with the button" : "recording silence"}`);
+      if (retry && this.active.get(name) === input) retry();
       return;
     }
     if (this.active.get(name) !== input) return stream.getTracks().forEach((t) => t.stop());
@@ -156,14 +168,42 @@ export class AudioInputs {
     this.offer(() => {
       this.offer(null);
       input.offered = false;
-      this.attach(name, input, navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: { echoCancellation: false, noiseSuppression: false },
-        preferCurrentTab: false,
-        // Sharing a whole screen can then carry what the computer plays, where the browser can.
-        systemAudio: "include",
-      }));
+      this.attach(name, input, this.askDisplay());
     });
+  }
+
+  askDisplay() {
+    return this.media.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      preferCurrentTab: false,
+      selfBrowserSurface: "exclude",
+      // Sharing a whole screen then carries what the computer plays, where the browser can:
+      // Chromium on Windows and ChromeOS, and on macOS from Chrome 141 on macOS 14.2. A tab carries
+      // its own audio in every Chromium.
+      systemAudio: "include",
+    });
+  }
+
+  // Whether the computer's audio needs a share: "monitor" when an input of the browser's already
+  // carries what the computer plays (PipeWire's or PulseAudio's "Monitor of ..." on Linux), which
+  // ffmpeg.sh makes the default sink; otherwise "asked", having asked for a share now, from the
+  // click that calls this, so the browser's prompt comes with it and not on a later button.
+  shareAhead() {
+    if ([...this.devices.values()].some((d) => d.label.startsWith("Monitor of "))) return "monitor";
+    this.dropShared();
+    this.shared = this.askDisplay();
+    // Turned down, the share is told when "tab" opens.
+    this.shared.catch(() => {});
+    return "asked";
+  }
+
+  // Stops a share asked for ahead that no recording took.
+  async dropShared() {
+    const shared = this.shared;
+    this.shared = null;
+    const stream = await shared?.catch(() => null);
+    stream?.getTracks().forEach((t) => t.stop());
   }
 
   // The inputs captured now, and whether each has a source yet.
