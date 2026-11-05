@@ -4,8 +4,8 @@
 # and audio_record find and open inputs on Linux:
 #
 #   browser-mic           the browser's default microphone (getUserMedia)
-#   browser-tab.monitor   the audio of a tab, window or screen the user shares (getDisplayMedia),
-#                         the monitor of the sink browser-tab
+#   browser-tab.monitor   the audio of a screen or tab the user shares (getDisplayMedia), the
+#                         monitor of the sink browser-tab, listed only while something is shared
 #   browser-devN          each other audio input of the browser's, by deviceId; on Linux these
 #   browser-devN.monitor  include PipeWire's "Monitor of ..." sources, which hold what the
 #                         computer plays, a meeting app's audio included (sink browser-devN)
@@ -21,10 +21,12 @@
 
 # The page's inputs, from /run/audio/devices: a file name and a label each. One whose label starts
 # "Monitor of " (PipeWire's and PulseAudio's name for a sink's monitor, and the shared tab's) is
-# the monitor source NAME.monitor of a sink NAME, as on a Linux desktop; the rest are sources.
+# the monitor source NAME.monitor of a sink NAME, as on a Linux desktop; the rest are sources. One
+# with no label has nothing to record now (no screen or tab shared) and is left out.
 names=()
 labels=()
 while IFS=$'\t' read -r name label; do
+  [ -n "$label" ] || continue
   names+=("$name")
   labels+=("$label")
 done < /run/audio/devices

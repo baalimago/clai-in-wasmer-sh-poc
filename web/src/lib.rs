@@ -55,9 +55,10 @@ pub struct Shell {
 }
 
 /// The page's audio inputs from the start, files in `/run/audio`: the default microphone, and
-/// the tab, window or screen the user shares. The page adds the browser's other audio devices
-/// with [`Shell::add_audio_input`].
-const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab", "Monitor of Shared tab or screen (browser)")];
+/// the screen or tab the user shares, with no label (left out of ffmpeg's lists) until the page
+/// relabels it on a share. The page adds the browser's other audio devices with
+/// [`Shell::add_audio_input`].
+const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab", "")];
 
 /// Boots the machine; its traffic leaves through the page's `fetch` calls ([`host`]), whose TLS
 /// clients trust `ca_certificates`, a PEM bundle at `/etc/ssl/certs/ca-certificates.crt`, where

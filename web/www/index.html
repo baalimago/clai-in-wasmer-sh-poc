@@ -93,9 +93,16 @@
           <label for="details">Who is there, and anything else the agent should know</label>
           <textarea id="details" rows="3" placeholder="Remote call with Ada and Grace"></textarea>
           <p id="trust-note" class="quiet" hidden>The agent, <code id="trust-profile"></code>, comes from the clai hub (<a id="trust-link" target="_blank" rel="noopener">read what it runs</a>). Starting the recording trusts it in this browser.</p>
-          <label class="tickbox"><input id="computer-audio" type="checkbox"><span>Record the computer's audio too, for a call or a video</span></label>
+          <div class="access">
+            <p id="access-mic">Mic: not allowed yet</p>
+            <p id="access-computer">Computer audio: nothing shared</p>
+            <div class="row">
+              <button id="allow-audio" type="button" class="secondary">Allow mic and computer audio</button>
+              <button id="unshare" type="button" class="secondary" hidden>Stop sharing</button>
+            </div>
+          </div>
           <button class="primary">Start recording</button>
-          <p class="quiet">The agent records your microphone. With the computer's audio, the browser asks which screen or tab to share: share the whole screen with its audio, or the tab that plays.</p>
+          <p class="quiet">The agent picks what to record from the meeting: your mic for a room, and the computer's audio too for a call or a video. For the computer's audio, share the whole screen with its audio, or the tab that plays.</p>
         </form>
       </section>
 
@@ -106,7 +113,6 @@
             <div id="meeting-meta" class="quiet"></div>
           </div>
           <div class="actions">
-            <button id="share-tab" class="secondary" hidden>Share computer audio</button>
             <button id="stop" class="dark" hidden>
               <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
               Stop and summarize

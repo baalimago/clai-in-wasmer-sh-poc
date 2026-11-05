@@ -57,22 +57,23 @@ let finished = null;
 let minutes = null;
 // The loudest of each input's latest samples, for the waveform.
 const peaks = new Map();
-const audio = new AudioInputs(
-  (name, bytes) => {
+const audio = new AudioInputs({
+  send: (name, bytes) => {
     const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 1);
     let peak = 0;
     for (const s of samples) peak = Math.max(peak, Math.abs(s));
     peaks.set(name, peak / 32768);
-    if (name === "mic") minutes?.level(Math.min(1, Math.max(...peaks.values()) * 1.6));
+    if (name === "mic" || !audio.inputs().some((i) => i.name === "mic")) minutes?.level(Math.min(1, Math.max(...peaks.values()) * 1.6));
     worker.postMessage({ samples: { name, bytes } }, [bytes.buffer]);
   },
-  (text) => {
+  notice: (text) => {
     term.write(`\r\n\x1b[33m${text}\x1b[0m\r\n`);
     minutes?.status(text);
   },
-  (share) => minutes?.offerShare(share),
-  () => minutes?.render(),
-);
+  changed: () => minutes?.render(),
+  // /run/audio/devices follows what the page can record: a share, once made, is a sink.
+  relist: () => worker.postMessage({ devices: audio.listing() }),
+});
 // What `play` (audio/play.sh) wrote to /run/audio/play, in a player until it is closed.
 const play = (bytes) => {
   const url = URL.createObjectURL(new Blob([bytes]));
@@ -261,7 +262,11 @@ window.minutes = minutes;
 
 // The microphone is asked for up front, so that the browser names its audio inputs; ffmpeg in
 // the machine then lists them all, and the agent picks which to record (audio/ffmpeg.sh).
-const findDevices = async () => worker.postMessage({ devices: await audio.discover() });
+const findDevices = async () => {
+  await audio.discover();
+  audio.relist();
+  minutes.render();
+};
 navigator.mediaDevices?.addEventListener("devicechange", () => findDevices());
 await findDevices();
 

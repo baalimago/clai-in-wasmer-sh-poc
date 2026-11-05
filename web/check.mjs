@@ -94,8 +94,8 @@ const MCP = [
 
 // The page's microphone is Chromium's fake one, which beeps. ffmpeg records it from the files in
 // /run/audio through the wrapper in /usr/local/bin, and clai runs the meeting-transcriber profile
-// with the test models: it lists the inputs, records the microphone and the (unshared, so silent)
-// tab until its four seconds are up, and transcribes the recording without the network. Then a
+// with the test models: it lists the inputs, records the microphone and the computer's monitor
+// until its four seconds are up, and transcribes the recording without the network. Then a
 // recording stops on Enter, as a user stops a meeting's.
 const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
 const MEETING = await readFile(new URL("../components/clai/examples/profiles/meeting-transcriber.json", import.meta.url), "utf8");
@@ -109,7 +109,8 @@ const RECORD = "CLAI_MOCK_AUDIO_TRANSCRIBE_FILE=/tmp/mic.wav clai -cm mock_test 
   "q tool_audio_sources tool_audio_record tool_audio_transcribe";
 const AUDIO = [
   { line: "ls /run/audio", status: 0, prints: "mic" },
-  { line: "ffmpeg -hide_banner -sources pulse", status: 0, prints: "browser-tab.monitor" },
+  // Shared (by SHARE below), a screen is a sink's monitor too.
+  { line: "ffmpeg -hide_banner -sources pulse", status: 0, prints: "browser-tab.monitor [Monitor of Shared screen or tab (browser)]" },
   // Every audio input of the browser's, the computer's monitor among them, is a pulse device.
   { line: "ffmpeg -hide_banner -sources pulse", status: 0, prints: "browser-dev2.monitor [Monitor of Built-in Audio Analog Stereo]" },
   { line: "ffmpeg -hide_banner -sinks pulse", status: 0, prints: "* browser-dev2 [Built-in Audio Analog Stereo]" },
@@ -228,6 +229,38 @@ try {
       process.exitCode = 1;
     }
   }
+  // Nothing shared yet: ffmpeg leaves the shared input out. Then the page shares a screen, as
+  // Allow mic and computer audio does: here a stand-in for getDisplayMedia, an oscillator's audio
+  // and a canvas's video, since headless Chromium shows no picker.
+  if (bash) {
+    const line = "ffmpeg -hide_banner -sources pulse | grep -q browser-tab || echo no-shared-input";
+    const before = await page.evaluate(() => window.terminalText());
+    await page.evaluate((line) => window.runCommand(line), line);
+    if (!(await page.evaluate(() => window.terminalText())).slice(before.length).includes("no-shared-input")) {
+      console.error("\nFAIL: ffmpeg lists the shared input before anything is shared");
+      process.exitCode = 1;
+    }
+    const shared = await page.evaluate(async () => {
+      navigator.mediaDevices.getDisplayMedia = async () => {
+        const context = new AudioContext();
+        const destination = context.createMediaStreamDestination();
+        const tone = context.createOscillator();
+        tone.connect(destination);
+        tone.start();
+        const video = document.createElement("canvas").captureStream().getVideoTracks();
+        return new MediaStream([...destination.stream.getAudioTracks(), ...video]);
+      };
+      return window.minutes.audio.share();
+    });
+    if (shared !== "shared") {
+      console.error(`\nFAIL: the stand-in share answered ${shared}`);
+      process.exitCode = 1;
+    }
+    if (!(await page.textContent("#access-computer")).includes("Shared screen or tab")) {
+      console.error("\nFAIL: the form does not say a screen is shared");
+      process.exitCode = 1;
+    }
+  }
   for (const { line, status: want, prints } of bash ? [...MCP, ...AUDIO, ...SIGNIN(server.address().port)] : []) {
     const before = await page.evaluate(() => window.terminalText());
     const status = await page.evaluate((line) => window.runCommand(line), line);
@@ -272,7 +305,7 @@ try {
       process.exitCode = 1;
     }
     await page.fill("#title", "Daily sync");
-    await page.click("#record-form button");
+    await page.click("#record-form > .primary");
     const stop = await page
       .waitForSelector("#stop:not([hidden])", { timeout: 60_000 })
       .then(() => true, () => false);

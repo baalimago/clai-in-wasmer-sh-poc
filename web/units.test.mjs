@@ -11,7 +11,7 @@ import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import { AudioInputs } from "./www/audio.js";
 import {
-  DEFAULTS, accountOf, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
+  DEFAULTS, accountOf, audioAccess, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, replyText, signoutResult, splitMessage, summariesIn, unknownSpeakers,
   withoutHeading,
 } from "./www/minutes.js";
@@ -303,19 +303,17 @@ test("signed out of slivingdoc, the agent keeps the notes here and does not ask 
   for (const format of [notebookFormat(true), notebookFormat(false)]) assert.match(format, /meetings\/summaries\/<start>_<slug>\.md/);
 });
 
-test("the agent records the computer's audio with the mic only when asked to", () => {
-  const call = DEFAULTS.query("Standup", "", false, true);
-  assert.match(call, /mic: true and sinks: "default"/);
-  assert.match(call, /Meeting: Standup\.$/);
-  const room = DEFAULTS.query("Standup", "", false, false);
-  assert.match(room, /mic: true and sinks: "none"/);
-  assert.doesNotMatch(room, /sinks: "default"/);
-});
-
-// A MediaStream's stand-in: its tracks, and whether they were stopped.
-const fakeStream = (kinds = ["audio", "video"]) => {
-  const tracks = kinds.map((kind) => ({ kind, stopped: false, stop() { this.stopped = true; } }));
-  return { tracks, getTracks: () => tracks, getAudioTracks: () => tracks.filter((t) => t.kind === "audio") };
+// A MediaStream's stand-in: its tracks, and whether they were stopped. `surface` is what a
+// display share shares.
+const fakeStream = (kinds = ["audio", "video"], surface = "monitor") => {
+  const listeners = [];
+  const tracks = kinds.map((kind) => ({
+    kind, label: kind, stopped: false,
+    stop() { this.stopped = true; },
+    getSettings: () => ({ displaySurface: surface }),
+    addEventListener: (type, f) => listeners.push(f),
+  }));
+  return { tracks, end: () => listeners.forEach((f) => f()), getTracks: () => tracks, getAudioTracks: () => tracks.filter((t) => t.kind === "audio"), getVideoTracks: () => tracks.filter((t) => t.kind === "video") };
 };
 
 // The browser's media devices, recording what was asked of them.
@@ -341,50 +339,85 @@ const fakeAudio = () => {
   };
 };
 
-const inputs = (media, offers = []) => {
+const inputs = (media) => {
   const notices = [];
-  const audio = new AudioInputs(() => {}, (t) => notices.push(t), (share) => offers.push(share), () => {}, { media, Context: fakeAudio() });
-  return { audio, notices, offers };
+  let relisted = 0;
+  const audio = new AudioInputs({ send: () => {}, notice: (t) => notices.push(t), relist: () => relisted++, media, Context: fakeAudio() });
+  return { audio, notices, relisted: () => relisted };
 };
+const labelOf = (audio, name) => audio.listing().find((i) => i.name === name)?.label;
 
-test("a click shares the computer's audio up front, which the tab input then records", async () => {
-  const media = fakeMedia([{ deviceId: "default", label: "Default - Mic" }]);
-  const { audio, offers } = inputs(media);
+test("until a screen or tab is shared, its input has no label, so ffmpeg leaves it out", async () => {
+  const { audio } = inputs(fakeMedia([{ deviceId: "default", label: "Default - Mic" }]));
   await audio.discover();
-  assert.equal(audio.shareAhead(), "asked");
+  assert.equal(labelOf(audio, "tab"), "");
+  assert.equal(labelOf(audio, "mic"), "Mic");
+  assert.deepEqual(audio.access(), { mic: "Mic", computer: null });
+});
+
+test("a share from the button is a sink for clai, named for what was shared, until it ends", async () => {
+  const stream = fakeStream(["audio", "video"], "browser");
+  const media = fakeMedia([{ deviceId: "default", label: "Default - Mic" }], async () => stream);
+  const { audio, relisted } = inputs(media);
+  await audio.discover();
+  assert.equal(await audio.share(), "shared");
   const [[, constraints]] = media.asked.filter(([kind]) => kind === "display");
   assert.equal(constraints.systemAudio, "include");
+  assert.equal(labelOf(audio, "tab"), "Monitor of Shared tab (browser)");
+  assert.deepEqual(audio.access().computer, { label: "Shared tab", via: "share" });
+  assert.equal(relisted(), 1);
+  // Recording it leaves the share up for the next recording.
   await audio.want(["mic", "tab"]);
-  await new Promise((r) => setTimeout(r));
-  assert.deepEqual(offers, [], "no button: the share came with the click");
   assert.ok(audio.inputs().find((i) => i.name === "tab").live);
   await audio.want([]);
+  assert.ok(!stream.tracks.some((t) => t.stopped));
+  stream.end();
+  assert.equal(labelOf(audio, "tab"), "");
+  assert.equal(relisted(), 2);
 });
 
-test("where a monitor of the computer's output is an input, no share is asked for", async () => {
-  const media = fakeMedia([{ deviceId: "default", label: "Default - Mic" }, { deviceId: "m", label: "Monitor of Built-in Audio" }]);
-  const { audio } = inputs(media);
-  await audio.discover();
-  assert.equal(audio.shareAhead(), "monitor");
-  assert.equal(media.asked.filter(([kind]) => kind === "display").length, 0);
+test("a share without audio is refused, and its video stopped", async () => {
+  const stream = fakeStream(["video"]);
+  const { audio, notices } = inputs(fakeMedia([], async () => stream));
+  assert.equal(await audio.share(), "no-audio");
+  assert.ok(stream.tracks[0].stopped);
+  assert.match(notices.join(), /no audio/);
+  assert.equal(labelOf(audio, "tab"), "");
 });
 
-test("a share turned down puts the button up, to ask again", async () => {
-  const media = fakeMedia([], async () => { throw new Error("Permission denied"); });
-  const { audio, offers, notices } = inputs(media);
-  audio.shareAhead();
-  await audio.want(["tab"]);
-  await new Promise((r) => setTimeout(r));
-  assert.equal(offers.length, 1);
-  assert.equal(typeof offers[0], "function");
+test("a share turned down says why and lists nothing", async () => {
+  const { audio, notices } = inputs(fakeMedia([], async () => { throw new Error("Permission denied"); }));
+  assert.equal(await audio.share(), "refused");
   assert.match(notices.join(), /Permission denied/);
-  await audio.want([]);
+  assert.equal(audio.access().computer, null);
 });
 
-test("a share the agent never opens is stopped when the recording ends", async () => {
-  const stream = fakeStream();
-  const { audio } = inputs(fakeMedia([], async () => stream));
-  audio.shareAhead();
-  await audio.dropShared();
-  assert.ok(stream.tracks.every((t) => t.stopped));
+test("a monitor of the computer's output already carries its audio, with no share", async () => {
+  const { audio } = inputs(fakeMedia([{ deviceId: "default", label: "Default - Mic" }, { deviceId: "m", label: "Monitor of Built-in Audio" }]));
+  await audio.discover();
+  assert.deepEqual(audio.access().computer, { label: "Monitor of Built-in Audio", via: "monitor" });
+  assert.equal(labelOf(audio, "dev1"), "Monitor of Built-in Audio");
+});
+
+test("without a microphone, the shared input is still listed", async () => {
+  const media = fakeMedia([]);
+  media.getUserMedia = async () => { throw new Error("Permission denied"); };
+  const { audio, notices } = inputs(media);
+  await audio.discover();
+  assert.deepEqual(audio.listing().map((i) => i.name), ["tab"]);
+  assert.equal(audio.access().mic, null);
+  assert.match(notices.join(), /no microphone/);
+});
+
+test("the form says what the agent can record, and the button what it asks for next", () => {
+  assert.deepEqual(audioAccess({ mic: null, computer: null }), {
+    mic: "Mic: not allowed yet", computer: "Computer audio: nothing shared", button: "Allow mic and computer audio", sharing: false,
+  });
+  const shared = audioAccess({ mic: "Mic", computer: { label: "Shared tab", via: "share" } });
+  assert.equal(shared.computer, "Computer audio: Shared tab");
+  assert.equal(shared.button, "Share something else");
+  assert.ok(shared.sharing);
+  const monitor = audioAccess({ mic: "Mic", computer: { label: "Monitor of Built-in Audio", via: "monitor" } });
+  assert.equal(monitor.computer, "Computer audio: Monitor of Built-in Audio, no share needed");
+  assert.equal(monitor.button, "Share computer audio");
 });

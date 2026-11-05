@@ -36,16 +36,21 @@ export const DEFAULTS = {
   notebook: "~/notebook",
   // The slivingdoc space meetings go to, when the login has it.
   space: "notes",
-  // The agent's query: the format, the inputs to record, then the meeting.
-  query: (title, details, connected, computerAudio) =>
-    `${notebookFormat(connected)}\n\n${audioChoice(computerAudio)}\n\nMeeting: ${title}.${details ? ` ${details}` : ""}`,
+  // The agent's query: the format, then the meeting, from which it picks the inputs to record.
+  query: (title, details, connected) =>
+    `${notebookFormat(connected)}\n\nMeeting: ${title}.${details ? ` ${details}` : ""}`,
 };
 
-// The user picks the inputs on the form, so the agent does not guess them from the meeting.
-export function audioChoice(computerAudio) {
-  return computerAudio
-    ? 'Record the microphone and what the computer plays: mic: true and sinks: "default".'
-    : 'Record the microphone alone: mic: true and sinks: "none".';
+// The form's lines on what the agent can record, from AudioInputs.access(): the microphone, the
+// computer's audio and the button's words, and whether the share can be ended.
+export function audioAccess({ mic, computer }) {
+  return {
+    mic: mic ? `Mic: ${mic}` : "Mic: not allowed yet",
+    computer: !computer ? "Computer audio: nothing shared"
+      : computer.via === "share" ? `Computer audio: ${computer.label}` : `Computer audio: ${computer.label}, no share needed`,
+    button: !mic ? "Allow mic and computer audio" : computer?.via === "share" ? "Share something else" : "Share computer audio",
+    sharing: computer?.via === "share",
+  };
 }
 
 // Front matter fields of a markdown file, and its body.
@@ -236,7 +241,6 @@ const CREDENTIALS = "~/.config/slivingdoc/credentials.json";
 const STORED_LOGIN = "minutes.slivingdoc-credentials";
 const STORED_TRUST = "minutes.clai-trust";
 const STORED_KEY = "minutes.openai-key";
-const STORED_COMPUTER_AUDIO = "minutes.computer-audio";
 // Set once the user chose to keep the notes in this browser: the sign-in note then stays away.
 const STORED_LOCAL = "minutes.local-only";
 const TRUST = '"$(clai confdir)/trust.json"';
@@ -270,7 +274,6 @@ export class Minutes {
     this.waiters = new Map();
     this.recording = null;
     this.current = null;
-    this.share = null;
     this.levels = [];
     this.actions = 0;
     this.$ = (s) => document.querySelector(s);
@@ -316,15 +319,13 @@ export class Minutes {
       this.render();
       if (this.connecting) $("#token-input").focus();
     };
-    $("#computer-audio").checked = this.store.get(STORED_COMPUTER_AUDIO) === "1";
-    $("#computer-audio").onchange = () => this.store.set(STORED_COMPUTER_AUDIO, $("#computer-audio").checked ? "1" : "0");
     $("#record-form").onsubmit = (event) => {
       event.preventDefault();
-      const computerAudio = $("#computer-audio").checked;
-      // The browser asks for a share only from a click: this one.
-      if (computerAudio && this.canRecord()) this.audio?.shareAhead();
-      this.record($("#title").value.trim() || "Meeting", $("#details").value.trim(), computerAudio);
+      this.record($("#title").value.trim() || "Meeting", $("#details").value.trim());
     };
+    // The browser asks for a share only from a click, so a button asks before the recording.
+    $("#allow-audio").onclick = () => this.allowAudio();
+    $("#unshare").onclick = () => this.audio?.unshare();
     $("#stop").onclick = () => this.stop();
     $("#speakers").onsubmit = (event) => {
       event.preventDefault();
@@ -335,7 +336,6 @@ export class Minutes {
       event.preventDefault();
       if ($("#space").value) this.chooseSpace($("#space").value);
     };
-    $("#share-tab").onclick = () => this.share?.();
     $("#history").onclick = () => this.history();
     $("#reply-form").onsubmit = (event) => {
       event.preventDefault();
@@ -629,42 +629,40 @@ export class Minutes {
       `${flags}query ${quote(query)}; } > /run/page/out`;
   }
 
-  // Why a recording cannot start yet, or "" when it can.
-  blocker() {
-    if (!this.env.has("OPENAI_API_KEY") && !this.config.flags) return "Add your OpenAI key first.";
-    if (this.spaces) return "Choose the slivingdoc space for your meetings first.";
-    return "";
+  // The microphone, if the browser has not given it yet, then a screen or tab to share.
+  async allowAudio() {
+    const sharing = this.audio.share();
+    if (!this.audio.access().mic) await this.audio.discover().then(() => this.audio.relist());
+    if ((await sharing) === "shared") this.status("");
+    this.render();
   }
 
-  canRecord() {
-    return this.blocker() === "";
-  }
-
-  async record(title, details, computerAudio = false) {
-    if (!this.canRecord()) return this.status(this.blocker());
+  async record(title, details) {
+    if (!this.env.has("OPENAI_API_KEY") && !this.config.flags) {
+      return this.status("Add your OpenAI key first.");
+    }
+    if (this.spaces) return this.status("Choose the slivingdoc space for your meetings first.");
     this.status("");
-    if (this.needsTrust && !(await this.trust())) return this.audio?.dropShared();
+    if (this.needsTrust && !(await this.trust())) return;
     // Recording past the sign-in note answers it: the notes stay in this browser.
     if (!this.connected && this.connecting) this.keepLocal();
     // Nothing of the last meeting carries over: its notes, recording, history or the form's text.
     this.current = null;
     this.historyItems = null;
     this.levels = [];
-    this.share = null;
     this.$("#title").value = "";
     this.$("#details").value = "";
     this.renderWave();
     this.recording = { title, startedAt: new Date(), started: null, stages: new Set() };
     this.show("meeting");
     await this.showRecording(null);
-    const line = this.agentLine(this.config.query(title, details, this.connected, computerAudio), false);
+    const line = this.agentLine(this.config.query(title, details, this.connected), false);
     const unwatch = this.watchStages("Record");
     const { status, body } = await this.run("Record", line, {
       topic: "reply",
       hint: "Stop and summarize types Enter on the console, which ends the agent's recording.",
     });
     unwatch();
-    await this.audio?.dropShared();
     await this.finish(status, body);
   }
 
@@ -736,12 +734,6 @@ export class Minutes {
   stop() {
     this.machine.type("\r");
     this.$("#stop").disabled = true;
-  }
-
-  // The tab sharing the audio input waits for: `share()` from a click, or null.
-  offerShare(share) {
-    this.share = share;
-    this.render();
   }
 
   // The loudness of the latest samples, 0 to 1, for the waveform.
@@ -828,6 +820,16 @@ export class Minutes {
       $("#signout-said").textContent = this.signoutNote.message;
       $("#tokens-link").hidden = !this.signoutNote.page;
       if (this.signoutNote.page) $("#tokens-link").href = this.signoutNote.page;
+    }
+    if (this.audio) {
+      const now = this.audio.access();
+      const access = audioAccess(now);
+      $("#access-mic").textContent = access.mic;
+      $("#access-mic").classList.toggle("allowed", Boolean(now.mic));
+      $("#access-computer").textContent = access.computer;
+      $("#access-computer").classList.toggle("allowed", Boolean(now.computer));
+      $("#allow-audio").textContent = access.button;
+      $("#unshare").hidden = !access.sharing;
     }
     $("#space-form").hidden = !this.spaces;
     if (this.spaces && $("#space").options.length !== this.spaces.length) {
@@ -947,7 +949,6 @@ export class Minutes {
     const live = Boolean(busy && r.stages.has("recording") && !r.stages.has("recorded"));
     $("#stop").hidden = !live;
     $("#stop").disabled = !live;
-    $("#share-tab").hidden = !(live && this.share);
     $("#agent").hidden = !(r?.done && (r.status !== 0 || !this.current));
     $("#agent-text").innerHTML = r?.done
       ? renderMarkdown(r.status === 0 ? r.reply || "_The agent said nothing._" : `The agent stopped with exit status ${r.status}. ${r.reply ?? ""}`)
@@ -961,9 +962,7 @@ export class Minutes {
     $("#recbar").classList.toggle("summarizing", r.stages.has("recorded"));
     state.textContent = live ? `Recording ${clock}` : r.stages.has("recorded") ? `Recorded ${clock}` : r.answering ? "The agent is working…" : "Starting the agent…";
     const inputs = this.audio?.inputs() ?? [];
-    const tab = inputs.find((i) => i.name === "tab");
-    const recorded = inputs.filter((i) => i.name !== "tab" || i.live).map((i) => i.name === "tab" ? "computer audio" : i.label);
-    $("#rec-inputs").textContent = (recorded.join(" + ") || "Mic") + (tab && !tab.live ? " · computer audio not shared yet" : "");
+    $("#rec-inputs").textContent = inputs.map((i) => i.label).join(" + ") || "Mic";
     const stages = [
       ["recording", "Recording"],
       ["recorded", "Recorded"],
