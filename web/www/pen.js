@@ -14,7 +14,7 @@ const KINDS = [
   { body: "#3b3b3b", light: "#5a5a5a", dark: "#222", cap: "#111", band: "#b9bcc2", wood: "#e8c592", tip: "#222" },
   { body: "#3f9b6e", light: "#62bd8f", dark: "#2a6e4d", cap: "#e98a8f", band: "#b9bcc2", wood: "#e8c592", tip: "#333" },
 ];
-const penSvg = (k) => `<g transform="scale(.6) rotate(28)">
+const penSvg = (k, size) => `<g transform="scale(${(0.6 * size).toFixed(2)}) rotate(28)">
   <path d="M0 0 L29 -8 L29 8 Z" fill="${k.wood}"/><path d="M0 0 L8 -2.2 L8 2.2 Z" fill="${k.tip}"/>
   <rect x="29" y="-8" width="160" height="16" fill="${k.body}"/><rect x="29" y="-8" width="160" height="5" fill="${k.light}"/>
   <rect x="29" y="3" width="160" height="5" fill="${k.dark}"/><rect x="189" y="-9" width="16" height="18" fill="${k.band}"/>
@@ -49,12 +49,15 @@ const easeOut = (p) => 1 - (1 - p) ** 3;
 const easeIn = (p) => p * p;
 
 export class Pen {
-  constructor(layer, kind) {
+  // `size` scales the pen, and `pace` every move it makes: 1.5 is half as slow again.
+  constructor(layer, kind, { size = 1, pace = 1 } = {}) {
+    this.size = size;
+    this.pace = pace;
     this.el = layer.ownerDocument.createElementNS(SVG, "svg");
     this.el.classList.add("pen");
     this.el.setAttribute("width", "1");
     this.el.setAttribute("height", "1");
-    this.el.innerHTML = penSvg(kind);
+    this.el.innerHTML = penSvg(kind, size);
     layer.append(this.el);
     this.x = 0;
     this.y = 0;
@@ -70,9 +73,9 @@ export class Pen {
     const [x0, y0] = [this.x, this.y];
     const t0 = performance.now();
     for (;;) {
-      const p = Math.min(1, (performance.now() - t0) / ms);
+      const p = Math.min(1, (performance.now() - t0) / (ms * this.pace));
       const e = ease(p);
-      this.place(x0 + (x - x0) * e, y0 + (y - y0) * e - Math.sin(p * Math.PI) * 30);
+      this.place(x0 + (x - x0) * e, y0 + (y - y0) * e - Math.sin(p * Math.PI) * 30 * this.size);
       if (p >= 1) return;
       await frame();
     }
@@ -119,14 +122,15 @@ export class Pens {
     this.layer = null;
   }
 
-  pen() {
+  // The pens about the page are small and quick by default.
+  pen({ size = 0.7, pace = 0.6 } = {}) {
     if (!this.layer) {
       this.layer = this.doc.createElement("div");
       this.layer.className = "pens";
       this.layer.setAttribute("aria-hidden", "true");
       this.doc.body.append(this.layer);
     }
-    return new Pen(this.layer, KINDS[Math.floor(Math.random() * KINDS.length)]);
+    return new Pen(this.layer, KINDS[Math.floor(Math.random() * KINDS.length)], { size, pace });
   }
 
   // Writes `el` in with a pen of its own, after `delay`: it is hidden at once, so call this in
@@ -169,7 +173,7 @@ export class Pens {
     };
     reveal(0, lines[0].left - 2);
     const total = lines.reduce((sum, l) => sum + l.right - l.left, 0);
-    const budget = ms ?? writingMs(total);
+    const budget = (ms ?? writingMs(total)) * pen.pace;
     const tip = (l) => l.top + (l.bottom - l.top) * 0.76;
     if (fly) await pen.flyIn(lines[0].left, tip(lines[0]));
     else await pen.hop(lines[0].left, tip(lines[0]), 160);
@@ -183,7 +187,7 @@ export class Pens {
         const p = Math.min(1, (performance.now() - t0) / lineMs);
         const x = line.left + (line.right - line.left) * p;
         reveal(k, x + 3);
-        pen.place(x, tip(line) + Math.sin(p * (line.right - line.left) / 5) * 2.2);
+        pen.place(x, tip(line) + Math.sin(p * (line.right - line.left) / (5 * pen.size)) * 2.2 * pen.size);
         if (p >= 1) break;
         await frame();
       }
@@ -203,7 +207,7 @@ export class Pens {
     await pen.hop(start.x, start.y, 180);
     const t0 = performance.now();
     while (live()) {
-      const p = Math.min(1, (performance.now() - t0) / ms);
+      const p = Math.min(1, (performance.now() - t0) / (ms * pen.pace));
       path.style.strokeDashoffset = length * (1 - p);
       const point = at(p);
       pen.place(point.x, point.y);

@@ -42,6 +42,8 @@ const REWRITTEN = ["#machine-chip", "#notebook-chip", "#key-chip", "#status", "#
 const HEADER = ".brand strong, .tagline, .chip, .chips > button:not([hidden])";
 
 const RULE = 32;
+// Steps still to be written keep their rules free of doodles: booting, checking, then one more.
+const MAX_STEPS = 3;
 const BOX = 20;
 const ERASE_MS = 900;
 const SVG = "http://www.w3.org/2000/svg";
@@ -100,7 +102,8 @@ export class Arrival {
     this.ink = this.doc.createElementNS(SVG, "svg");
     this.ink.classList.add("loader-ink");
     this.list.append(this.ink);
-    this.pen = this.pens.pen();
+    // The pad's own pen: big and unhurried.
+    this.pen = this.pens.pen({ size: 1.5, pace: 1.5 });
     this.doodles = [];
     this.doodled = 0;
     const lines = [];
@@ -108,7 +111,7 @@ export class Arrival {
     let flown = false;
     for (;;) {
       // Behind Minutes, the pen hurries.
-      const hurry = seen < this.phases.length || this.ready ? 0.55 : 1;
+      const hurry = seen < this.phases.length || this.ready ? 0.8 : 1;
       if (seen < this.phases.length) {
         const text = stepsFor([this.phases[seen++]])[0];
         if (!text || lines.some((l) => l.text === text)) continue;
@@ -130,7 +133,7 @@ export class Arrival {
         continue;
       }
       if (this.ready) break;
-      await this.doodle(lines.length);
+      await this.doodle();
       this.doodled += 1;
     }
     await this.erase();
@@ -169,12 +172,12 @@ export class Arrival {
     return path;
   }
 
-  // One doodle on the pad below the steps, rubbing out the oldest when there is no room.
-  async doodle(count) {
+  // One doodle on the pad below the steps (and those to come), rubbing out the oldest when there is no room.
+  async doodle() {
     const content = this.list.parentElement;
     const area = {
-      x: 40, y: (count + 1) * RULE,
-      w: content.clientWidth - 110 - 56 - 80, h: content.clientHeight - 3 * RULE - (count + 2) * RULE,
+      x: 40, y: (MAX_STEPS + 1) * RULE,
+      w: content.clientWidth - 110 - 56 - 80, h: content.clientHeight - 3 * RULE - (MAX_STEPS + 2) * RULE,
     };
     const shape = SHAPES[pick(Object.keys(SHAPES))];
     const scale = rand(0.8, 1.2);
