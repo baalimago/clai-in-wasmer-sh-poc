@@ -1,8 +1,12 @@
-// While the machine boots, the login is checked and the notes are fetched, the pencil writes each
-// step on the pad, taps beside it while it lasts and ticks it off; then an eraser rubs the list
-// out and the app arrives on the pad (pad.css): the sticky note is put down, the meetings are
-// written in. Minutes says how far it got in #app's data-phase; the app shows once #app has the
-// class "arrived". Text the header chips and the status line change to is written in again.
+// While the machine boots, the login is checked and the notes are fetched, a pen writes each
+// step on the pad and draws a checkbox before it; with nothing else to add it doodles, and as
+// the steps finish it ticks their boxes off one by one. Then an eraser rubs it all out and the
+// app arrives on the pad: the sticky note is put down (pad.css), and every text of the app is
+// written in by a pen of its own (pen.js), as is text that shows or changes later. Minutes says
+// how far it got in #app's data-phase; the app shows once #app has the class "arrived".
+
+import { Pens } from "./pen.js";
+import { SHAPES } from "./doodles.js";
 
 export const STEPS = {
   booting: "Waking up the machine…",
@@ -23,24 +27,38 @@ export function stepsFor(phases) {
   return lines;
 }
 
-const WRITE_MS = 750;
-// A step that is already over is written faster, to catch up.
-const CATCH_UP_MS = 380;
-const TICK_MS = 260;
-const ERASE_MS = 900;
+// How many of `count` written steps are over: all of them once Minutes is ready, else all
+// but the one under way.
+export const stepsOver = (count, ready) => (ready ? count : Math.max(0, count - 1));
+
+// What a pen writes in when it shows. The sticky note is put down whole instead, and a
+// meeting's notes are handwriting.js's.
+const WRITTEN = [
+  ".setup > .card:not(#notebook-card) > :is(label, p)", ".setup > .card:not(#notebook-card) .row > *",
+  "[data-view=record] > h1", "#record-form > *", "#empty", ".notebook > *", "#status",
+  "#meetings .sidehead", "#meetings .meeting > *",
+].join(", ");
+const REWRITTEN = ["#machine-chip", "#notebook-chip", "#key-chip", "#status", "#notebook-status"];
+const HEADER = ".brand strong, .tagline, .chip, .chips > button:not([hidden])";
+
 const RULE = 32;
-const REWRITTEN = ["#machine-chip", "#notebook-chip", "#key-chip", "#status"];
+const BOX = 20;
+const ERASE_MS = 900;
+const SVG = "http://www.w3.org/2000/svg";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
 export class Arrival {
-  constructor(doc) {
+  constructor(doc, pens = new Pens(doc)) {
     this.doc = doc;
+    this.pens = pens;
     this.app = doc.querySelector("#app");
     this.list = doc.querySelector("#loading");
     this.phases = [];
     this.waiting = null;
-    this.calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.calm = pens.calm;
   }
 
   start() {
@@ -56,70 +74,125 @@ export class Arrival {
       this.waiting = null;
       wake?.();
     }).observe(this.app, { attributes: true, attributeFilter: ["data-phase"], attributeOldValue: true });
-    this.rewrite();
+    this.watch();
     this.run();
+  }
+
+  get ready() {
+    return this.phases.includes("ready");
   }
 
   async run() {
     if (this.calm) {
-      while (!this.phases.includes("ready")) await new Promise((resolve) => (this.waiting = resolve));
+      while (!this.ready) await new Promise((resolve) => (this.waiting = resolve));
       return this.arrive();
     }
     await Promise.race([this.doc.fonts?.ready, sleep(1500)]);
-    this.pencil = this.doc.createElement("span");
-    this.pencil.className = "loader-pencil";
-    this.list.append(this.pencil);
-    const written = [];
+    for (const [i, el] of [...this.doc.querySelectorAll(HEADER)].entries()) this.pens.write(el, { delay: i * 90 });
+    this.ink = this.doc.createElementNS(SVG, "svg");
+    this.ink.classList.add("loader-ink");
+    this.list.append(this.ink);
+    this.pen = this.pens.pen();
+    this.doodles = [];
+    const lines = [];
     let seen = 0;
+    let flown = false;
     for (;;) {
-      if (seen >= this.phases.length) {
-        this.pencil.classList.add("tapping");
-        await new Promise((resolve) => (this.waiting = resolve));
-        this.pencil.classList.remove("tapping");
+      // Behind Minutes, the pen hurries.
+      const hurry = seen < this.phases.length || this.ready ? 0.55 : 1;
+      if (seen < this.phases.length) {
+        const text = stepsFor([this.phases[seen++]])[0];
+        if (!text || lines.some((l) => l.text === text)) continue;
+        lines.push(await this.writeStep(text, hurry, flown));
+        flown = true;
         continue;
       }
-      const phase = this.phases[seen++];
-      const text = stepsFor([phase])[0];
-      const ready = phase === "ready";
-      if (!ready && (!text || written.some((li) => li.dataset.text === text))) continue;
-      if (written.length) {
-        written.at(-1).classList.add("done");
-        await sleep(TICK_MS);
+      const unboxed = lines.find((l) => !l.box);
+      if (unboxed) {
+        unboxed.box = await this.stroke(this.boxPath(lines.indexOf(unboxed)), 420 * hurry);
+        continue;
       }
-      if (ready) break;
-      const ms = seen < this.phases.length ? CATCH_UP_MS : WRITE_MS;
-      written.push(await this.write(text, written.length, ms));
+      const over = stepsOver(lines.length, this.ready);
+      const due = lines.slice(0, over).find((l) => !l.ticked);
+      if (due) {
+        due.ticked = true;
+        due.li.classList.add("done");
+        await this.stroke(this.tickPath(lines.indexOf(due)), 300 * hurry, "tick");
+        continue;
+      }
+      if (this.ready) break;
+      await this.doodle(lines.length);
     }
     await this.erase();
   }
 
-  async write(text, index, ms) {
+  async writeStep(text, hurry, flown) {
     const li = this.doc.createElement("li");
-    li.dataset.text = text;
-    li.style.setProperty("--ms", `${ms}ms`);
     const ink = this.doc.createElement("span");
     ink.className = "ink";
     ink.textContent = text;
-    const tick = this.doc.createElementNS("http://www.w3.org/2000/svg", "svg");
-    tick.classList.add("tick");
-    tick.setAttribute("viewBox", "0 0 30 24");
-    tick.setAttribute("aria-hidden", "true");
-    tick.innerHTML = '<path d="M3 13 L11 21 L27 3"/>';
-    li.append(ink, tick);
-    this.list.insertBefore(li, this.pencil);
-    const y = index * RULE + 21;
-    this.pencil.style.transition = "none";
-    this.pencil.style.transform = `translate(0px, ${y}px) rotate(28deg)`;
-    this.pencil.classList.add("writing");
-    void this.pencil.offsetWidth;
-    this.pencil.style.transition = `transform ${ms}ms linear`;
-    this.pencil.style.transform = `translate(${ink.offsetWidth}px, ${y}px) rotate(28deg)`;
-    await sleep(ms);
-    this.pencil.classList.remove("writing");
-    return li;
+    li.append(ink);
+    this.list.insertBefore(li, this.ink);
+    ink.style.clipPath = "polygon(0 0, 0 0, 0 0)";
+    await this.pens.writeWith(this.pen, ink, undefined, { ms: text.length * 34 * hurry, fly: !flown });
+    ink.style.clipPath = "";
+    return { text, li };
+  }
+
+  boxPath(i) {
+    const y = i * RULE + 5;
+    const p = (x, yy) => `${(x + rand(-1, 1)).toFixed(1)} ${(yy + rand(-1, 1)).toFixed(1)}`;
+    return `M${p(4, y)} L${p(4 + BOX, y)} L${p(4 + BOX, y + BOX)} L${p(4, y + BOX)} L${p(4, y + 1)}`;
+  }
+
+  tickPath(i) {
+    const y = i * RULE + 5;
+    return `M7 ${y + 10} L12 ${y + 17} L${4 + BOX + 6} ${y - 6}`;
+  }
+
+  async stroke(d, ms, kind = "") {
+    const path = this.doc.createElementNS(SVG, "path");
+    path.setAttribute("d", d);
+    if (kind) path.classList.add(kind);
+    this.ink.append(path);
+    await this.pens.draw(this.pen, path, ms);
+    return path;
+  }
+
+  // One doodle on the pad below the steps, rubbing out the oldest when there is no room.
+  async doodle(count) {
+    const content = this.list.parentElement;
+    const area = {
+      x: 40, y: (count + 1) * RULE,
+      w: content.clientWidth - 110 - 56 - 80, h: content.clientHeight - 3 * RULE - (count + 2) * RULE,
+    };
+    const shape = SHAPES[pick(Object.keys(SHAPES))];
+    const scale = rand(0.8, 1.2);
+    const w = shape.w * scale;
+    const h = shape.h * scale;
+    let spot = null;
+    for (let i = 0; i < 30 && !spot && area.w > w && area.h > h; i++) {
+      const r = { x: area.x + rand(0, area.w - w), y: area.y + rand(0, area.h - h), w, h };
+      if (!this.doodles.some((d) => r.x < d.x + d.w + 16 && d.x < r.x + r.w + 16 && r.y < d.y + d.h + 12 && d.y < r.y + r.h + 12)) spot = r;
+    }
+    if (!spot) {
+      const old = this.doodles.splice(0, Math.max(1, Math.ceil(this.doodles.length / 2)));
+      for (const d of old) d.path.classList.add("gone");
+      await sleep(400);
+      for (const d of old) d.path.remove();
+      return;
+    }
+    const path = this.doc.createElementNS(SVG, "path");
+    path.setAttribute("d", shape.d(shape.w, shape.h));
+    path.setAttribute("transform", `translate(${spot.x.toFixed(1)} ${spot.y.toFixed(1)}) scale(${scale.toFixed(2)})`);
+    path.classList.add("doodle");
+    this.ink.append(path);
+    this.doodles.push({ ...spot, path });
+    await this.pens.draw(this.pen, path, rand(900, 1500));
   }
 
   async erase() {
+    this.pen.flyOff();
     const eraser = this.doc.createElement("span");
     eraser.className = "eraser";
     eraser.setAttribute("aria-hidden", "true");
@@ -135,18 +208,48 @@ export class Arrival {
   arrive() {
     this.app.classList.add("arrived");
     this.app.setAttribute("aria-busy", "false");
+    this.writeIn(this.app);
   }
 
-  // The chips and the status line, written in again when their text changes.
-  rewrite() {
+  // Every text in `root` that shows is written in, each by its own pen, a little apart.
+  writeIn(root) {
+    const targets = [...(root.matches?.(WRITTEN) ? [root] : []), ...root.querySelectorAll(WRITTEN)];
+    let i = 0;
+    for (const el of targets) {
+      el.closest(".fresh")?.classList.remove("fresh");
+      if (!el.getClientRects().length) continue;
+      this.pens.write(el, { delay: i++ * 45 + rand(0, 120) });
+    }
+  }
+
+  // After the arrival: what shows again, a meeting new to the list, and text that changes.
+  watch() {
+    new MutationObserver((records) => {
+      if (!this.app.classList.contains("arrived")) return;
+      for (const r of records) {
+        if (r.oldValue === null || r.target.hidden) continue;
+        if (r.target.closest("#notebook-card, [data-view=meeting], #loading")) continue;
+        this.writeIn(r.target);
+      }
+    }).observe(this.app, { attributes: true, attributeFilter: ["hidden"], attributeOldValue: true, subtree: true });
+    const meetings = this.doc.querySelector("#meetings");
+    if (meetings) {
+      new MutationObserver(() => {
+        if (!this.app.classList.contains("arrived")) return;
+        let i = 0;
+        for (const fresh of meetings.querySelectorAll(".fresh")) {
+          fresh.classList.remove("fresh");
+          const parts = fresh.matches(".sidehead") ? [fresh] : [...fresh.children];
+          for (const el of parts) this.pens.write(el, { delay: i++ * 120 });
+        }
+      }).observe(meetings, { childList: true });
+    }
     for (const el of REWRITTEN.map((s) => this.doc.querySelector(s)).filter(Boolean)) {
       let text = el.textContent;
       new MutationObserver(() => {
         if (el.textContent === text) return;
         text = el.textContent;
-        el.classList.remove("rewritten");
-        void el.offsetWidth;
-        if (text) el.classList.add("rewritten");
+        if (text) this.pens.write(el);
       }).observe(el, { childList: true, characterData: true, subtree: true });
     }
   }

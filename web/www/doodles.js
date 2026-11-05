@@ -57,7 +57,7 @@ const j = (n = 1.5) => rand(-n, n);
 const pt = (x, y) => `${(x + j()).toFixed(1)} ${(y + j()).toFixed(1)}`;
 
 // Shapes in a box from (0, 0) to (w, h): each returns the path data, drawn as one stroke.
-const SHAPES = {
+export const SHAPES = {
   coil: { w: 150, h: 26, d: (w, h) => { let s = `M0 ${h}`; for (let t = 0; t <= 7 * Math.PI * 2; t += 0.35) s += ` L${pt(6 + t * 4.6 - 11 * Math.sin(t), h / 2 + 11 * Math.cos(t + Math.PI))}`; return s; } },
   spiral: { w: 60, h: 60, d: () => { let s = "M30 30"; for (let t = 0; t <= 5.5 * Math.PI * 2; t += 0.25) s += ` L${pt(30 + t * 0.85 * Math.cos(t), 30 + t * 0.85 * Math.sin(t), 0.6)}`; return s; } },
   star: { w: 56, h: 54, d: () => { const p = [0, 2, 4, 1, 3, 0].map((i) => [28 + 26 * Math.cos(-Math.PI / 2 + (i * 2 * Math.PI) / 5), 29 + 26 * Math.sin(-Math.PI / 2 + (i * 2 * Math.PI) / 5)]); return `M${p.map(([x, y]) => pt(x, y)).join(" L")}`; } },

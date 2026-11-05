@@ -803,21 +803,18 @@ export class Minutes {
     this.renderRecording();
   }
 
-  // Keeps the entries it drew before, so only a meeting new to the list is written in (pad.css
-  // animates .fresh entries, in the order of --i).
+  // Keeps the entries it drew before, so only a meeting new to the list is written in: the new
+  // ones have the class "fresh" until arrival.js has them written.
   renderList() {
     const list = this.$("#meetings");
     const drawn = new Map([...list.children].map((el) => [el.dataset.key, el]));
     const nodes = [];
-    let fresh = 0;
     const entry = (key, make) => {
       let el = drawn.get(key);
       if (!el) {
         el = make();
         el.dataset.key = key;
         el.classList.add("fresh");
-        el.style.setProperty("--i", fresh++);
-        el.addEventListener("animationend", () => el.classList.remove("fresh"), { once: true });
       }
       nodes.push(el);
       return el;

@@ -5,7 +5,8 @@ import { test } from "node:test";
 
 import { Machine, describe, label, mask } from "./www/hood.js";
 import { notePath, renderMarkdown } from "./www/markdown.js";
-import { STEPS, stepsFor } from "./www/arrival.js";
+import { STEPS, stepsFor, stepsOver } from "./www/arrival.js";
+import { groupLines, writingMs } from "./www/pen.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import {
@@ -267,4 +268,26 @@ test("the pad writes each loading phase once, in order, and nothing after ready"
     [STEPS.booting, STEPS.checking, STEPS.fetching]);
   assert.deepEqual(stepsFor(["booting", "listing", "ready"]), [STEPS.booting, STEPS.listing]);
   assert.deepEqual(stepsFor(["ready"]), []);
+});
+
+test("a step's box is ticked once the next step began, and every box once Minutes is ready", () => {
+  assert.equal(stepsOver(3, false), 2);
+  assert.equal(stepsOver(3, true), 3);
+  assert.equal(stepsOver(0, false), 0);
+});
+
+test("a pen writes text line by line, the rects of one line taken together", () => {
+  const rect = (left, top, width, height = 30) => ({ left, top, right: left + width, bottom: top + height });
+  const lines = groupLines([rect(200, 40, 50), rect(10, 0, 100), rect(112, 2, 60, 26), rect(10, 40, 180), rect(5, 90, 0)]);
+  assert.deepEqual(lines, [
+    { left: 10, right: 172, top: 0, bottom: 30 },
+    { left: 10, right: 250, top: 40, bottom: 70 },
+  ]);
+  assert.deepEqual(groupLines([]), []);
+});
+
+test("a pen takes longer over more text, within bounds", () => {
+  assert.equal(writingMs(10), 260);
+  assert.ok(writingMs(300) > writingMs(200));
+  assert.equal(writingMs(5000), 1700);
 });
