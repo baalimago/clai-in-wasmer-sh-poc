@@ -218,46 +218,38 @@ body, .top { background: var(--pad-paper); }
 @keyframes tape-on { from { opacity: 0; transform: translateY(-14px) rotate(-8deg) scale(1.4); } }
 @keyframes stamp { from { opacity: 0; transform: scale(1.35) rotate(-3deg); } }
 
-/* What the agent can record, ticked in red once allowed. */
-.access p { font: 22px/var(--rule) var(--hand); color: var(--pad-ink); }
-.access p::before { content: "☐ "; color: #8a7f68; }
-.access p.allowed::before { content: "☑ "; color: var(--pad-accent); }
-
-/* The audio note: a green sticky note smacked onto the pad before a recording, over everything and
-   with nothing dimmed, saying plainly what this
-   browser can and cannot record. The recording starts once it is answered. */
-.audio-note {
-  box-sizing: border-box; width: min(520px, calc(100vw - 32px)); padding: 26px 30px 28px; border: 0; overflow: visible;
-  font: 22px/var(--rule) var(--hand); color: #2f3b24; transform: rotate(1deg);
+/* The checklist before a recording: a green post-it smacked onto the pad. Each line still to do
+   is a link in red pencil that asks the browser; Start recording waits until all are ticked. */
+.precheck {
+  position: relative; box-sizing: border-box; align-self: flex-start; width: min(520px, 100%); margin: 8px 0 var(--rule); padding: 20px 26px 22px;
+  font: 22px/var(--rule) var(--hand); color: #2f3b24; transform: rotate(-1deg);
   background: linear-gradient(170deg, #e2f5c4, #d3ecaa 60%, #c4e293);
   box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 8px 12px 14px -8px rgba(40, 50, 10, .45);
 }
-.audio-note::backdrop { background: none; }
-/* No tape: a post-it holds by its glue strip, a touch darker along the top, and its free bottom
-   edge lifts off the pad, its shadow deepest at the bottom right. */
-.audio-note::before { content: ""; position: absolute; inset: 0 0 auto; height: 34px; background: linear-gradient(rgba(90, 120, 40, .1), transparent); pointer-events: none; }
-
-.audio-note h2 { margin: 0 0 8px; font: 700 30px/var(--rule) var(--hand); }
-.audio-note p { margin: 0 0 8px; }
-.audio-note .said { font-weight: 700; }
-.audio-note .said.alarm { color: var(--pad-accent); }
-/* The share's loudness while the note listens, scribbled in pencil. */
-.audio-note .level { height: 14px; margin: 4px 0 8px; border: 2px solid #3d4a2e; border-radius: 4px 9px 5px 8px / 8px 4px 9px 5px; overflow: hidden; }
-.audio-note .level span { display: block; height: 100%; width: calc(var(--level, 0) * 100%); background: repeating-linear-gradient(-55deg, var(--pad-accent) 0 3px, transparent 3px 6px); transition: width .08s linear; }
-.audio-note .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 16px; }
-.audio-note button { min-height: 40px; padding: 0 18px; font: 700 21px var(--hand); cursor: pointer; border-radius: 3px 8px 4px 9px / 9px 4px 8px 3px; }
-.audio-note .primary { border: 0; background: var(--pad-accent); color: #fff; box-shadow: 0 4px 0 #8e2a1f; }
-.audio-note .primary:active { transform: translateY(2px); box-shadow: 0 2px 0 #8e2a1f; }
-.audio-note .secondary { background: rgba(255, 255, 255, .5); border: 1.5px solid #3b3b3b; color: #2f3b24; }
-.audio-note .inline { border: 0; background: none; padding: 0; font-weight: 400; color: #4a5a3a; text-decoration: underline; }
-.audio-note button:disabled { opacity: .5; cursor: progress; }
+/* No tape: a post-it holds by its glue strip, a touch darker along the top. */
+.precheck::before { content: ""; position: absolute; inset: 0 0 auto; height: 34px; background: linear-gradient(rgba(90, 120, 40, .1), transparent); pointer-events: none; }
+.content .precheck h2 { margin: 0 0 4px; font: 700 28px/var(--rule) var(--hand); color: #2f3b24; }
+.precheck .ticks { margin: 0; padding: 0; list-style: none; }
+.content .precheck .tick { display: block; height: auto; min-height: var(--rule); padding: 0; border: 0; background: none; font: 22px/var(--rule) var(--hand); color: #2f3b24; text-align: left; cursor: default; }
+.precheck .tick::before { content: "☐ "; color: #6a7a52; }
+.precheck .tick.allowed::before { content: "☑ "; color: var(--pad-accent); }
+.content .precheck .tick:not(:disabled) { cursor: pointer; color: var(--pad-accent); font-weight: 700; text-decoration: underline 1.5px; text-underline-offset: 4px; }
+.content .precheck .tick:not(:disabled):hover { text-decoration-style: wavy; }
+.precheck .tick:disabled { opacity: 1; }
+.precheck .tick.alarm { color: var(--pad-accent); }
+.precheck .hint { margin: 6px 0 0; font-size: 19px; line-height: 26px; color: #4a5a3a; }
+.precheck .row { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 6px; }
+.content .precheck .inline { height: auto; padding: 0; border: 0; background: none; font: 19px var(--hand); color: #4a5a3a; text-decoration: underline; cursor: pointer; }
+.precheck .level { height: 14px; margin: 4px 0; border: 2px solid #3d4a2e; border-radius: 4px 9px 5px 8px / 8px 4px 9px 5px; overflow: hidden; }
+.precheck .level span { display: block; height: 100%; width: calc(var(--level, 0) * 100%); background: repeating-linear-gradient(-55deg, var(--pad-accent) 0 3px, transparent 3px 6px); transition: width .08s linear; }
+.content #record-form > .primary:disabled { opacity: .35; cursor: not-allowed; }
 @media (prefers-reduced-motion: no-preference) {
-  .audio-note[open] { animation: note-smack .38s cubic-bezier(.2, .9, .3, 1) backwards; }
+  #app.arrived .precheck { animation: note-smack .38s cubic-bezier(.2, .9, .3, 1) backwards; }
 }
 /* Slapped down by a palm: in from above the pad, flattened on impact, settling with a wobble. */
 @keyframes note-smack {
   0% { opacity: 0; transform: translateY(-40px) rotate(-6deg) scale(1.25); box-shadow: 0 50px 50px -10px rgba(40, 60, 10, .3); }
-  45% { opacity: 1; transform: rotate(2.2deg) scale(.97, .95); box-shadow: 0 2px 4px rgba(40, 60, 10, .4); }
-  70% { transform: rotate(.4deg) scale(1.01); }
-  100% { transform: rotate(1deg); }
+  45% { opacity: 1; transform: rotate(-2.2deg) scale(.97, .95); box-shadow: 0 2px 4px rgba(40, 60, 10, .4); }
+  70% { transform: rotate(-.6deg) scale(1.01); }
+  100% { transform: rotate(-1deg); }
 }

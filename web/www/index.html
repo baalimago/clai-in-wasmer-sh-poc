@@ -93,26 +93,23 @@
           <label for="details">Who is there, and anything else the agent should know</label>
           <textarea id="details" rows="3" placeholder="Remote call with Ada and Grace"></textarea>
           <p id="trust-note" class="quiet" hidden>The agent, <code id="trust-profile"></code>, comes from the clai hub (<a id="trust-link" target="_blank" rel="noopener">read what it runs</a>). Starting the recording trusts it in this browser.</p>
-          <div class="access">
-            <p id="access-mic">Mic: not allowed yet</p>
-            <p id="access-computer">Computer audio: nothing shared</p>
-            <button id="unshare" type="button" class="secondary" hidden>Stop sharing</button>
-          </div>
+          <aside class="precheck postit" aria-labelledby="precheck-title">
+            <h2 id="precheck-title">Before you record</h2>
+            <ol class="ticks">
+              <li><button id="access-mic" type="button" class="tick">Allow the mic</button></li>
+              <li><button id="access-computer" type="button" class="tick">Share a tab with your call</button></li>
+              <li><button id="access-sound" type="button" class="tick" disabled>Hear the call's sound</button></li>
+            </ol>
+            <div id="precheck-level" class="level" hidden><span></span></div>
+            <p id="precheck-hint" class="hint"></p>
+            <div class="row">
+              <button id="unshare" type="button" class="inline" hidden>Stop sharing</button>
+              <button id="mic-only" type="button" class="inline">Or skip it: record the mic only</button>
+            </div>
+          </aside>
           <button class="primary">Start recording</button>
           <p class="quiet">The agent picks what to record from the meeting: your mic for a room, and the computer's audio too for a call or a video.</p>
         </form>
-        <dialog id="audio-note" class="audio-note" aria-labelledby="note-title">
-          <h2 id="note-title">Your call's sound</h2>
-          <p id="note-text"></p>
-          <p id="note-said" class="said" role="status" hidden></p>
-          <div id="note-level" class="level" hidden><span></span></div>
-          <div class="row">
-            <button id="note-listen" type="button" class="primary" hidden>Listen again</button>
-            <button id="note-share" type="button" class="primary">Share a tab</button>
-            <button id="note-mic" type="button" class="secondary">Mic only</button>
-            <button id="note-cancel" type="button" class="inline">Cancel</button>
-          </div>
-        </dialog>
       </section>
 
       <section data-view="meeting" class="stack-lg" hidden>

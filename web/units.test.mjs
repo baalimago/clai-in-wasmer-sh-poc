@@ -11,7 +11,7 @@ import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import { AudioInputs, audioLimits, platformOf, withOsVersion } from "./www/audio.js";
 import {
-  DEFAULTS, accountOf, audioAccess, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
+  DEFAULTS, accountOf, precheck, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, replyText, signoutResult, splitMessage, summariesIn, unknownSpeakers,
   withoutHeading,
 } from "./www/minutes.js";
@@ -409,15 +409,33 @@ test("without a microphone, the shared input is still listed", async () => {
   assert.match(notices.join(), /no microphone/);
 });
 
-test("the form says what the agent can record", () => {
-  assert.deepEqual(audioAccess({ mic: null, computer: null }), {
-    mic: "Mic: not allowed yet", computer: "Computer audio: nothing shared", sharing: false,
-  });
-  const shared = audioAccess({ mic: "Mic", computer: { label: "Shared tab", via: "share" } });
-  assert.equal(shared.computer, "Computer audio: Shared tab");
-  assert.ok(shared.sharing);
-  const monitor = audioAccess({ mic: "Mic", computer: { label: "Monitor of Built-in Audio", via: "monitor" } });
-  assert.equal(monitor.computer, "Computer audio: Monitor of Built-in Audio, no share needed");
+const ticks = (check) => check.items.map((i) => `${i.done ? "x" : " "} ${i.text}${i.action ? " >" : ""}`);
+
+test("the checklist asks for the mic, then a share, then sound, and only then may a recording start", () => {
+  const none = precheck({ mic: null, computer: null }, "Share a tab", {});
+  assert.deepEqual(ticks(none), ["  Allow the mic >", "  Share a tab with your call >", "  Hear the call's sound"]);
+  assert.equal(none.ready, false);
+  const shared = { mic: "Mic", computer: { label: "Shared tab", via: "share" } };
+  assert.deepEqual(ticks(precheck(shared, "Share a tab", {})), ["x Mic: Mic", "x Computer audio: Shared tab", "  Listening for sound…"]);
+  assert.equal(precheck(shared, "Share a tab", {}).ready, false);
+  assert.equal(precheck(shared, "Share a tab", { silent: true }).items[2].text, "No sound yet. Unmute the call or press play.");
+  const heard = precheck(shared, "Share a tab", { heard: true });
+  assert.deepEqual(ticks(heard).at(-1), "x Sound heard");
+  assert.ok(heard.ready);
+  assert.ok(heard.sharing);
+});
+
+test("a monitor needs no share, and mic only skips the computer's audio on purpose", () => {
+  const monitor = precheck({ mic: "Mic", computer: { label: "Monitor of Built-in Audio", via: "monitor" } }, "Share a tab", {});
+  assert.deepEqual(ticks(monitor), ["x Mic: Mic", "x Computer audio: Monitor of Built-in Audio", "x Sound comes through the monitor"]);
+  assert.ok(monitor.ready);
+  const micOnly = precheck({ mic: "Mic", computer: null }, "Share a tab", { micOnly: true });
+  assert.deepEqual(ticks(micOnly), ["x Mic: Mic", "x Computer audio: skipped, mic only", "x Sound: your mic only"]);
+  assert.ok(micOnly.ready);
+  const safari = precheck({ mic: "Mic", computer: null }, null, {});
+  assert.deepEqual(ticks(safari)[1], "  Computer audio: this browser can't record it");
+  assert.equal(safari.ready, false, "the user says mic only before recording without the call's sound");
+  assert.equal(precheck({ mic: null, computer: null }, "Share a tab", { micOnly: true }).ready, false, "no mic, nothing to record");
 });
 
 test("the browser, its version and the OS come from the user agent", () => {

@@ -240,7 +240,7 @@ try {
       console.error("\nFAIL: ffmpeg lists the shared input before anything is shared");
       process.exitCode = 1;
     }
-    const shared = await page.evaluate(async () => {
+    await page.evaluate(async () => {
       navigator.mediaDevices.getDisplayMedia = async () => {
         const context = new AudioContext();
         const destination = context.createMediaStreamDestination();
@@ -250,14 +250,17 @@ try {
         const video = document.createElement("canvas").captureStream().getVideoTracks();
         return new MediaStream([...destination.stream.getAudioTracks(), ...video]);
       };
-      return window.minutes.audio.share();
     });
-    if (shared !== "shared") {
-      console.error(`\nFAIL: the stand-in share answered ${shared}`);
+    // The checklist's share line asks for it (here, past the fake monitor that already ticks it),
+    // and the tone ticks off its sound.
+    await page.evaluate(() => window.minutes.shareComputer());
+    if (!(await page.textContent("#access-computer")).includes("Shared screen or tab")) {
+      console.error("\nFAIL: the checklist does not say a screen is shared");
       process.exitCode = 1;
     }
-    if (!(await page.textContent("#access-computer")).includes("Shared screen or tab")) {
-      console.error("\nFAIL: the form does not say a screen is shared");
+    const heard = await page.waitForSelector("#access-sound.allowed", { timeout: 10_000 }).then(() => true, () => false);
+    if (!heard || (await page.isDisabled("#record-form > .primary"))) {
+      console.error("\nFAIL: the checklist did not hear the share, so Start recording stays off");
       process.exitCode = 1;
     }
   }
