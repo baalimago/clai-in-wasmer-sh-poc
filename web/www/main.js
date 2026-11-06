@@ -4,7 +4,7 @@
 import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
 import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
 import { LineEditor, split, isShellLine } from "./shell.js";
-import { AudioInputs } from "./audio.js";
+import { AudioInputs, platformOf } from "./audio.js";
 import { HoodView, Machine } from "./hood.js";
 import { Minutes } from "./minutes.js";
 import { Doodles } from "./doodles.js";
@@ -255,6 +255,7 @@ minutes = new Minutes({
   },
   recordings: new Recordings(globalThis.indexedDB),
   config: window.minutesConfig ?? {},
+  platform: platformOf(navigator),
 });
 minutes.start();
 new Doodles(document, model).start();

@@ -96,14 +96,21 @@
           <div class="access">
             <p id="access-mic">Mic: not allowed yet</p>
             <p id="access-computer">Computer audio: nothing shared</p>
-            <div class="row">
-              <button id="allow-audio" type="button" class="secondary">Allow mic and computer audio</button>
-              <button id="unshare" type="button" class="secondary" hidden>Stop sharing</button>
-            </div>
+            <button id="unshare" type="button" class="secondary" hidden>Stop sharing</button>
           </div>
           <button class="primary">Start recording</button>
-          <p class="quiet">The agent picks what to record from the meeting: your mic for a room, and the computer's audio too for a call or a video. For the computer's audio, share the whole screen with its audio, or the tab that plays.</p>
+          <p class="quiet">The agent picks what to record from the meeting: your mic for a room, and the computer's audio too for a call or a video.</p>
         </form>
+        <dialog id="audio-note" class="audio-note" aria-labelledby="note-title">
+          <h2 id="note-title">Before you record: what can be heard</h2>
+          <div id="note-text"></div>
+          <p id="note-said" class="said" role="alert" hidden></p>
+          <div class="row">
+            <button id="note-share" type="button" class="primary">Share the meeting's tab</button>
+            <button id="note-mic" type="button" class="secondary">Record my mic only</button>
+            <button id="note-cancel" type="button" class="inline">Not now</button>
+          </div>
+        </dialog>
       </section>
 
       <section data-view="meeting" class="stack-lg" hidden>

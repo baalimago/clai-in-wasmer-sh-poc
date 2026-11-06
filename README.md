@@ -56,7 +56,7 @@ Nothing the app does needs the peek; its buttons run programs on the machine dir
 | --- | --- |
 | Start recording | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook`. The agent picks the inputs from the meeting: the mic for a room, the mic and the default sink for a call |
 | Stop and summarize | types Enter on the console, which ends clai's `audio_record` |
-| Allow mic and computer audio | asks for the microphone, if the browser has not given it, and for a screen or tab to share; its audio is then the sink `browser-tab` for every recording until the share stops (Stop sharing, or the browser's own bar) |
+| Start recording, without the computer's audio | first puts up a note saying plainly what this browser can record (Chrome on Linux: a tab's sound only, never a desktop app's), with **Share the meeting's tab** and **Record my mic only**; the recording starts once the browser's prompts are answered. A share's audio is the sink `browser-tab` for every recording until it stops (Stop sharing, or the browser's own bar) |
 | Send (answer the agent) | the same `clai`, with `-re` and the answer as the query |
 | A meeting | `cat` of its summary and transcript, rendered as markdown |
 | history | `slivingdoc log` |
@@ -258,7 +258,7 @@ with SIGINT. In the page:
 | Input | pulse name | What it records |
 | --- | --- | --- |
 | `/run/audio/mic` | `browser-mic` | The browser's default microphone |
-| `/run/audio/tab` | `browser-tab.monitor` | The audio of the screen or tab shared with **Allow mic and computer audio**. Listed only while something is shared, so clai's `audio_sources` says `system_audio: unavailable` before |
+| `/run/audio/tab` | `browser-tab.monitor` | The audio of the screen or tab shared from the audio note. Listed only while something is shared, so clai's `audio_sources` says `system_audio: unavailable` before |
 | `/run/audio/devN` | `browser-devN`, or `browser-devN.monitor` | Each other audio input of the browser's. On Linux, PipeWire and PulseAudio offer each output's "Monitor of ..." as one, which holds what the computer plays, a meeting app's audio included: it is a sink's monitor here too, and the first is the default sink |
 
 The page asks for the microphone when it loads, which is what lets the browser name its audio

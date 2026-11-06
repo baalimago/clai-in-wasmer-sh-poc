@@ -5,6 +5,7 @@
 
 import { mask } from "./hood.js";
 import { notePath, renderMarkdown } from "./markdown.js";
+import { audioLimits } from "./audio.js";
 
 const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
 
@@ -41,14 +42,13 @@ export const DEFAULTS = {
     `${notebookFormat(connected)}\n\nMeeting: ${title}.${details ? ` ${details}` : ""}`,
 };
 
-// The form's lines on what the agent can record, from AudioInputs.access(): the microphone, the
-// computer's audio and the button's words, and whether the share can be ended.
+// The form's lines on what the agent can record, from AudioInputs.access(): the microphone and
+// the computer's audio, and whether the share can be ended.
 export function audioAccess({ mic, computer }) {
   return {
     mic: mic ? `Mic: ${mic}` : "Mic: not allowed yet",
     computer: !computer ? "Computer audio: nothing shared"
       : computer.via === "share" ? `Computer audio: ${computer.label}` : `Computer audio: ${computer.label}, no share needed`,
-    button: !mic ? "Allow mic and computer audio" : computer?.via === "share" ? "Share something else" : "Share computer audio",
     sharing: computer?.via === "share",
   };
 }
@@ -253,7 +253,8 @@ export class Minutes {
   // the machine did, `env` the variables every run gets, `audio` the inputs being captured.
   // `store` keeps the slivingdoc login and the OpenAI key in the browser: get(key),
   // set(key, value), remove(key).
-  constructor({ root, machine, hood, model, env, audio, store, recordings, config }) {
+  constructor({ root, machine, hood, model, env, audio, store, recordings, config, platform = { os: "other", browser: "other" } }) {
+    this.platform = platform;
     this.root = root;
     this.machine = machine;
     this.hood = hood;
@@ -321,10 +322,13 @@ export class Minutes {
     };
     $("#record-form").onsubmit = (event) => {
       event.preventDefault();
-      this.record($("#title").value.trim() || "Meeting", $("#details").value.trim());
+      this.prepare($("#title").value.trim() || "Meeting", $("#details").value.trim());
     };
-    // The browser asks for a share only from a click, so a button asks before the recording.
-    $("#allow-audio").onclick = () => this.allowAudio();
+    // The audio note: the recording starts once the browser's prompts are answered.
+    $("#note-share").onclick = () => this.answerNote(true);
+    $("#note-mic").onclick = () => this.answerNote(false);
+    $("#note-cancel").onclick = () => this.closeNote();
+    $("#audio-note").oncancel = () => this.closeNote();
     $("#unshare").onclick = () => this.audio?.unshare();
     $("#stop").onclick = () => this.stop();
     $("#speakers").onsubmit = (event) => {
@@ -629,19 +633,71 @@ export class Minutes {
       `${flags}query ${quote(query)}; } > /run/page/out`;
   }
 
-  // The microphone, if the browser has not given it yet, then a screen or tab to share.
-  async allowAudio() {
-    const sharing = this.audio.share();
-    if (!this.audio.access().mic) await this.audio.discover().then(() => this.audio.relist());
-    if ((await sharing) === "shared") this.status("");
-    this.render();
+  // Why a recording cannot start yet, or "" when it can.
+  blocker() {
+    if (!this.env.has("OPENAI_API_KEY") && !this.config.flags) return "Add your OpenAI key first.";
+    if (this.spaces) return "Choose the slivingdoc space for your meetings first.";
+    return "";
+  }
+
+  // Start recording: straight away when the mic and the computer's audio are both there;
+  // otherwise the audio note says what this browser can record and asks for it first.
+  prepare(title, details) {
+    if (this.blocker()) return this.status(this.blocker());
+    const access = this.audio?.access();
+    if (!access || (access.mic && access.computer)) return this.record(title, details);
+    this.pending = { title, details };
+    this.noteSaid = "";
+    this.renderNote();
+    this.$("#audio-note").showModal();
+  }
+
+  // The note's answer: a share, if `share`, and the mic if the browser has not given it, and
+  // the recording once each prompt is answered, granted or denied.
+  async answerNote(share) {
+    const $ = this.$;
+    for (const b of $("#audio-note").querySelectorAll("button")) b.disabled = true;
+    // The share first: the browser asks for one only while the click is fresh.
+    const shared = share ? await this.audio.share() : null;
+    if (!this.audio.access().mic) {
+      await this.audio.discover();
+      this.audio.relist();
+    }
+    for (const b of $("#audio-note").querySelectorAll("button")) b.disabled = false;
+    if (shared === "no-audio") {
+      this.noteSaid = "That share carried no sound. Pick a browser tab that plays the call, or record your mic only.";
+      return this.renderNote();
+    }
+    const access = this.audio.access();
+    if (!access.mic && !access.computer) {
+      this.noteSaid = "Nothing to record: the browser gave neither the mic nor any sound. Allow the mic in the address bar's site settings.";
+      return this.renderNote();
+    }
+    const { title, details } = this.pending;
+    this.closeNote();
+    await this.record(title, details);
+  }
+
+  closeNote() {
+    this.pending = null;
+    const note = this.$("#audio-note");
+    if (note.open) note.close();
+  }
+
+  renderNote() {
+    const $ = this.$;
+    const access = this.audio.access();
+    const limits = audioLimits(this.platform, access.computer?.via === "monitor" ? access.computer.label : null);
+    $("#note-text").replaceChildren(...limits.text.map((line) => Object.assign(document.createElement("p"), { textContent: line })));
+    $("#note-said").textContent = this.noteSaid;
+    $("#note-said").hidden = !this.noteSaid;
+    $("#note-share").hidden = !limits.share;
+    if (limits.share) $("#note-share").textContent = limits.share;
+    $("#note-mic").textContent = access.computer ? "Record" : access.mic ? "Record my mic only" : "Allow the mic and record";
   }
 
   async record(title, details) {
-    if (!this.env.has("OPENAI_API_KEY") && !this.config.flags) {
-      return this.status("Add your OpenAI key first.");
-    }
-    if (this.spaces) return this.status("Choose the slivingdoc space for your meetings first.");
+    if (this.blocker()) return this.status(this.blocker());
     this.status("");
     if (this.needsTrust && !(await this.trust())) return;
     // Recording past the sign-in note answers it: the notes stay in this browser.
@@ -828,7 +884,6 @@ export class Minutes {
       $("#access-mic").classList.toggle("allowed", Boolean(now.mic));
       $("#access-computer").textContent = access.computer;
       $("#access-computer").classList.toggle("allowed", Boolean(now.computer));
-      $("#allow-audio").textContent = access.button;
       $("#unshare").hidden = !access.sharing;
     }
     $("#space-form").hidden = !this.spaces;

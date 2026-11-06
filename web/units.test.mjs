@@ -9,7 +9,7 @@ import { STEPS, stepsFor, stepsOver } from "./www/arrival.js";
 import { groupLines, writingMs } from "./www/pen.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
-import { AudioInputs } from "./www/audio.js";
+import { AudioInputs, audioLimits, platformOf } from "./www/audio.js";
 import {
   DEFAULTS, accountOf, audioAccess, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, replyText, signoutResult, splitMessage, summariesIn, unknownSpeakers,
@@ -409,15 +409,39 @@ test("without a microphone, the shared input is still listed", async () => {
   assert.match(notices.join(), /no microphone/);
 });
 
-test("the form says what the agent can record, and the button what it asks for next", () => {
+test("the form says what the agent can record", () => {
   assert.deepEqual(audioAccess({ mic: null, computer: null }), {
-    mic: "Mic: not allowed yet", computer: "Computer audio: nothing shared", button: "Allow mic and computer audio", sharing: false,
+    mic: "Mic: not allowed yet", computer: "Computer audio: nothing shared", sharing: false,
   });
   const shared = audioAccess({ mic: "Mic", computer: { label: "Shared tab", via: "share" } });
   assert.equal(shared.computer, "Computer audio: Shared tab");
-  assert.equal(shared.button, "Share something else");
   assert.ok(shared.sharing);
   const monitor = audioAccess({ mic: "Mic", computer: { label: "Monitor of Built-in Audio", via: "monitor" } });
   assert.equal(monitor.computer, "Computer audio: Monitor of Built-in Audio, no share needed");
-  assert.equal(monitor.button, "Share computer audio");
+});
+
+test("the browser and OS come from the user agent", () => {
+  const linuxChrome = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
+  assert.deepEqual(platformOf({ userAgent: linuxChrome }), { os: "linux", browser: "chromium" });
+  assert.deepEqual(platformOf({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0" }), { os: "windows", browser: "chromium" });
+  assert.deepEqual(platformOf({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15" }), { os: "mac", browser: "safari" });
+  assert.deepEqual(platformOf({ userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0" }), { os: "linux", browser: "firefox" });
+  assert.deepEqual(platformOf({ userAgent: "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" }), { os: "chromeos", browser: "chromium" });
+});
+
+test("the audio note says bluntly what this browser cannot record", () => {
+  const linux = audioLimits({ os: "linux", browser: "chromium" });
+  assert.equal(linux.share, "Share the meeting's tab");
+  assert.match(linux.text.join(" "), /cannot record your computer's sound/);
+  assert.match(linux.text.join(" "), /desktop app/);
+  const windows = audioLimits({ os: "windows", browser: "chromium" });
+  assert.equal(windows.share, "Share a tab or the screen");
+  assert.match(windows.text.join(" "), /Also share system audio/);
+  assert.match(audioLimits({ os: "mac", browser: "chromium" }).text.join(" "), /macOS 14\.2/);
+  for (const browser of ["firefox", "safari"]) {
+    const limits = audioLimits({ os: "mac", browser });
+    assert.equal(limits.share, null, `${browser} shares no audio, so the note offers no share`);
+    assert.match(limits.text.join(" "), /only your mic/);
+  }
+  assert.match(audioLimits({ os: "linux", browser: "firefox" }, "Monitor of Built-in Audio").text.join(" "), /Monitor of Built-in Audio/);
 });
