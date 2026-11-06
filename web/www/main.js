@@ -4,7 +4,7 @@
 import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
 import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
 import { LineEditor, split, isShellLine } from "./shell.js";
-import { AudioInputs, platformOf } from "./audio.js";
+import { AudioInputs, platformOf, withOsVersion } from "./audio.js";
 import { HoodView, Machine } from "./hood.js";
 import { Minutes } from "./minutes.js";
 import { Doodles } from "./doodles.js";
@@ -258,6 +258,8 @@ minutes = new Minutes({
   platform: platformOf(navigator),
 });
 minutes.start();
+// What the audio note says depends on the macOS version, which Chromium tells when asked.
+withOsVersion(minutes.platform, navigator).then((platform) => { minutes.platform = platform; });
 new Doodles(document, model).start();
 window.minutes = minutes;
 

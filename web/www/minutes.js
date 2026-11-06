@@ -670,12 +670,12 @@ export class Minutes {
     if (!this.pending) return;
     this.noteMode = "ask";
     if (shared === "no-audio") {
-      this.noteSaid = "That share carried no sound. Pick a browser tab that plays the call, or record your mic only.";
+      this.noteSaid = "That share has no sound. Pick the tab with your call.";
       return this.renderNote();
     }
     const access = this.audio.access();
     if (!access.mic && !access.computer) {
-      this.noteSaid = "Nothing to record: the browser gave neither the mic nor any sound. Allow the mic in the address bar's site settings.";
+      this.noteSaid = "Nothing to record. Allow the mic in the address bar.";
       return this.renderNote();
     }
     if (shared === "shared") return this.listenNote();
@@ -685,16 +685,14 @@ export class Minutes {
   // Listens to the share, showing its level, and records once it is heard.
   async listenNote() {
     this.noteMode = "listening";
-    this.noteSaid = `Listening for sound from the ${this.audio.access().computer?.label.toLowerCase() ?? "share"}…`;
+    this.noteSaid = "Listening for sound…";
     this.renderNote();
     const meter = this.$("#note-level");
     const heard = await this.audio.hearShare({ onLevel: (peak) => meter.style.setProperty("--level", Math.min(1, peak * 4)) });
     if (!this.pending) return;
     if (heard === "sound") return this.startPending();
     this.noteMode = "silent";
-    this.noteSaid = heard === "silent"
-      ? `No sound from the ${this.audio.access().computer?.label.toLowerCase() ?? "share"} in 8 seconds. Unmute the call or press play, then listen again, or share another tab.`
-      : "The share stopped. Share the meeting's tab again, or record your mic only.";
+    this.noteSaid = heard === "silent" ? "No sound yet. Unmute the call or press play." : "Sharing stopped.";
     this.renderNote();
   }
 
@@ -715,18 +713,18 @@ export class Minutes {
     const access = this.audio.access();
     const mode = this.noteMode;
     const limits = audioLimits(this.platform, access.computer?.via === "monitor" ? access.computer.label : null);
-    $("#note-text").replaceChildren(...limits.text.map((line) => Object.assign(document.createElement("p"), { textContent: line })));
+    $("#note-text").textContent = limits.text;
     $("#note-said").textContent = this.noteSaid;
     $("#note-said").hidden = !this.noteSaid;
     $("#note-said").classList.toggle("alarm", mode === "silent" || (mode === "ask" && Boolean(this.noteSaid)));
     $("#note-level").hidden = mode !== "listening";
     $("#note-listen").hidden = mode !== "silent";
     $("#note-share").hidden = !limits.share || mode === "listening";
-    if (limits.share) $("#note-share").textContent = mode === "silent" ? "Share another tab" : limits.share;
+    if (limits.share) $("#note-share").textContent = mode === "silent" ? "Share another" : limits.share;
     $("#note-share").className = mode === "silent" ? "secondary" : "primary";
     $("#note-mic").hidden = mode === "listening";
     $("#note-mic").textContent = mode === "silent" ? "Record anyway"
-      : access.computer ? "Record" : access.mic ? "Record my mic only" : "Allow the mic and record";
+      : access.computer ? "Record" : access.mic ? "Mic only" : "Allow mic, record";
     for (const id of ["#note-share", "#note-mic", "#note-listen"]) $(id).disabled = mode === "asking";
   }
 

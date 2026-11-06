@@ -275,62 +275,60 @@ export class AudioInputs {
 
 const clean = (label) => label.replace(/[\t\n]/g, " ");
 
-// The OS and browser engine `navigator` reports, for what its audio capture can do.
-export function platformOf({ userAgent = "" }) {
+// The OS, browser engine, browser name and major version `navigator` reports.
+export function platformOf({ userAgent = "", userAgentData }) {
   const os = /CrOS/.test(userAgent) ? "chromeos"
     : /Windows/.test(userAgent) ? "windows"
     : /Macintosh|Mac OS X/.test(userAgent) ? "mac"
     : /Linux|X11/.test(userAgent) ? "linux" : "other";
-  const browser = /Firefox\//.test(userAgent) ? "firefox"
-    : /Chrome\/|Chromium\/|Edg\//.test(userAgent) ? "chromium"
-    : /Safari\//.test(userAgent) ? "safari" : "other";
-  return { os, browser };
+  const major = (pattern) => Number(pattern.exec(userAgent)?.[1]) || undefined;
+  if (/Firefox\//.test(userAgent)) return { os, browser: "firefox", name: "Firefox", version: major(/Firefox\/(\d+)/) };
+  if (/Chrome\/|Chromium\/|Edg\//.test(userAgent)) {
+    // Brave and others name themselves only in the brands.
+    const brand = userAgentData?.brands?.map((b) => b.brand).find((b) => !/Chromium|Not.A.Brand|Google Chrome/i.test(b));
+    const name = /Edg\//.test(userAgent) ? "Edge" : brand?.replace(/^Microsoft /, "") ?? "Chrome";
+    return { os, browser: "chromium", name, version: major(/Chrome\/(\d+)/) };
+  }
+  if (/Safari\//.test(userAgent)) return { os, browser: "safari", name: "Safari", version: major(/Version\/(\d+)/) };
+  return { os, browser: "other", name: "This browser", version: undefined };
 }
 
-const NAMES = { firefox: "Firefox", safari: "Safari", other: "This browser" };
+// `platform` with the macOS version Chromium on a Mac gives when asked, `[major, minor]`; the
+// user agent says 10.15.7 whatever the version. Unchanged when it does not say.
+export async function withOsVersion(platform, { userAgentData }) {
+  if (platform.os !== "mac" || !userAgentData?.getHighEntropyValues) return platform;
+  try {
+    const { platformVersion } = await userAgentData.getHighEntropyValues(["platformVersion"]);
+    const [major, minor = 0] = platformVersion.split(".").map(Number);
+    return major ? { ...platform, osVersion: [major, minor] } : platform;
+  } catch {
+    return platform;
+  }
+}
 
-// What the browser on `platform` can record of the computer's sound, in plain words, and the words
-// of the button that asks for a share, or null where a share carries no sound. `monitor` is the
-// label of an input that already carries the computer's sound, if there is one.
-export function audioLimits({ os, browser }, monitor = null) {
+const SCREEN = "Share your screen with \"Share system audio\" on, or the tab with your call.";
+const TAB = "Share the tab with your call.";
+const atLeast = ([major, minor], [wantMajor, wantMinor]) => major > wantMajor || (major === wantMajor && minor >= wantMinor);
+
+// What to tell the user on `platform` about recording a call's sound, as one short instruction,
+// and the words of the button that asks for a share, or null where a share carries no sound.
+// `monitor` is the label of an input that already carries the computer's sound, if there is one.
+export function audioLimits({ os, browser, name = "This browser", version, osVersion }, monitor = null) {
   if (monitor) {
-    return {
-      share: browser === "chromium" ? "Share a tab or the screen" : null,
-      text: [`This browser hands Minutes your computer's sound through "${monitor}": desktop apps are recorded too, no share needed.`],
-    };
+    return { share: browser === "chromium" ? "Share a tab" : null, text: `Your computer's sound comes in through ${monitor}: nothing to share.` };
   }
-  if (browser !== "chromium") {
-    return {
-      share: null,
-      text: [
-        `${NAMES[browser]} cannot record a tab's sound or your computer's sound: only your mic is recorded, so the other side of a call is lost.`,
-        "To record a call, open Minutes in Chrome or Edge.",
-      ],
-    };
-  }
-  if (os === "windows" || os === "chromeos") {
-    return {
-      share: "Share a tab or the screen",
-      text: [
-        "Share your entire screen and tick \"Also share system audio\" to record everything the computer plays, desktop apps such as Zoom or Teams included.",
-        "Or share only the meeting's tab.",
-      ],
-    };
-  }
+  if (browser !== "chromium") return { share: null, text: `${name} can't record a call's sound, only your mic. Use Chrome or Edge for calls.` };
+  if (os === "windows" || os === "chromeos") return { share: "Share screen or tab", text: SCREEN };
   if (os === "mac") {
-    return {
-      share: "Share a tab or the screen",
-      text: [
-        "Chrome on macOS records your computer's sound only from Chrome 141 on macOS 14.2 or newer, when you share the entire screen with its audio.",
-        "Otherwise it records only a browser tab's sound: a call in the Zoom or Teams desktop app is not recorded, only your voice. Join the call in a Chrome tab and share that tab.",
-      ],
-    };
+    // Chrome records the screen's sound on macOS from Chrome 141 on macOS 14.2.
+    if (version && version < 141) {
+      return { share: "Share a tab", text: `${name} ${version} can only record a tab's sound (${name} 141 can record the screen's). ${TAB}` };
+    }
+    if (!osVersion) return { share: "Share screen or tab", text: `${TAB} The screen's sound works only on macOS 14.2 or newer.` };
+    if (!atLeast(osVersion, [14, 2])) {
+      return { share: "Share a tab", text: `macOS ${osVersion.join(".")} lets ${name} record only a tab's sound (macOS 14.2 can record the screen's). ${TAB}` };
+    }
+    return { share: "Share screen or tab", text: SCREEN };
   }
-  return {
-    share: "Share the meeting's tab",
-    text: [
-      "Chrome on Linux cannot record your computer's sound, only a browser tab's. Sharing a window or the screen gives no sound.",
-      "A call in the Zoom, Teams or Slack desktop app is not recorded, only your voice. Join the call in a Chrome tab and share that tab.",
-    ],
-  };
+  return { share: "Share a tab", text: `${name} can only record a tab's sound. Share the tab with your call; desktop apps such as Zoom won't be heard.` };
 }
