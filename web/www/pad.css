@@ -239,7 +239,11 @@ body, .top { background: var(--pad-paper); }
 
 .audio-note h2 { margin: 0 0 8px; font: 700 30px/var(--rule) var(--hand); }
 .audio-note p { margin: 0 0 8px; }
-.audio-note .said { color: var(--pad-accent); font-weight: 700; }
+.audio-note .said { font-weight: 700; }
+.audio-note .said.alarm { color: var(--pad-accent); }
+/* The share's loudness while the note listens, scribbled in pencil. */
+.audio-note .level { height: 14px; margin: 4px 0 8px; border: 2px solid #3d4a2e; border-radius: 4px 9px 5px 8px / 8px 4px 9px 5px; overflow: hidden; }
+.audio-note .level span { display: block; height: 100%; width: calc(var(--level, 0) * 100%); background: repeating-linear-gradient(-55deg, var(--pad-accent) 0 3px, transparent 3px 6px); transition: width .08s linear; }
 .audio-note .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 16px; }
 .audio-note button { min-height: 40px; padding: 0 18px; font: 700 21px var(--hand); cursor: pointer; border-radius: 3px 8px 4px 9px / 9px 4px 8px 3px; }
 .audio-note .primary { border: 0; background: var(--pad-accent); color: #fff; box-shadow: 0 4px 0 #8e2a1f; }

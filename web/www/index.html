@@ -104,8 +104,10 @@
         <dialog id="audio-note" class="audio-note" aria-labelledby="note-title">
           <h2 id="note-title">Before you record: what can be heard</h2>
           <div id="note-text"></div>
-          <p id="note-said" class="said" role="alert" hidden></p>
+          <p id="note-said" class="said" role="status" hidden></p>
+          <div id="note-level" class="level" hidden><span></span></div>
           <div class="row">
+            <button id="note-listen" type="button" class="primary" hidden>Listen again</button>
             <button id="note-share" type="button" class="primary">Share the meeting's tab</button>
             <button id="note-mic" type="button" class="secondary">Record my mic only</button>
             <button id="note-cancel" type="button" class="inline">Not now</button>

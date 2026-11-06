@@ -327,6 +327,7 @@ export class Minutes {
     // The audio note: the recording starts once the browser's prompts are answered.
     $("#note-share").onclick = () => this.answerNote(true);
     $("#note-mic").onclick = () => this.answerNote(false);
+    $("#note-listen").onclick = () => this.listenNote();
     $("#note-cancel").onclick = () => this.closeNote();
     $("#audio-note").oncancel = () => this.closeNote();
     $("#unshare").onclick = () => this.audio?.unshare();
@@ -640,30 +641,34 @@ export class Minutes {
     return "";
   }
 
-  // Start recording: straight away when the mic and the computer's audio are both there;
-  // otherwise the audio note says what this browser can record and asks for it first.
+  // Start recording: straight away with the mic and a monitor of the computer's output; with a
+  // share, once sound is heard from it; otherwise the audio note says what this browser can
+  // record and asks for it first. The recording never starts behind a prompt or a silent share.
   prepare(title, details) {
     if (this.blocker()) return this.status(this.blocker());
     const access = this.audio?.access();
-    if (!access || (access.mic && access.computer)) return this.record(title, details);
+    if (!access || (access.mic && access.computer?.via === "monitor")) return this.record(title, details);
     this.pending = { title, details };
     this.noteSaid = "";
+    this.noteMode = "ask";
     this.renderNote();
     this.$("#audio-note").showModal();
+    if (access.mic && access.computer) this.listenNote();
   }
 
-  // The note's answer: a share, if `share`, and the mic if the browser has not given it, and
-  // the recording once each prompt is answered, granted or denied.
+  // The note's answer: a share, if `share`, and the mic if the browser has not given it. A
+  // share is listened to before the recording starts.
   async answerNote(share) {
-    const $ = this.$;
-    for (const b of $("#audio-note").querySelectorAll("button")) b.disabled = true;
+    this.noteMode = "asking";
+    this.renderNote();
     // The share first: the browser asks for one only while the click is fresh.
     const shared = share ? await this.audio.share() : null;
     if (!this.audio.access().mic) {
       await this.audio.discover();
       this.audio.relist();
     }
-    for (const b of $("#audio-note").querySelectorAll("button")) b.disabled = false;
+    if (!this.pending) return;
+    this.noteMode = "ask";
     if (shared === "no-audio") {
       this.noteSaid = "That share carried no sound. Pick a browser tab that plays the call, or record your mic only.";
       return this.renderNote();
@@ -673,6 +678,27 @@ export class Minutes {
       this.noteSaid = "Nothing to record: the browser gave neither the mic nor any sound. Allow the mic in the address bar's site settings.";
       return this.renderNote();
     }
+    if (shared === "shared") return this.listenNote();
+    this.startPending();
+  }
+
+  // Listens to the share, showing its level, and records once it is heard.
+  async listenNote() {
+    this.noteMode = "listening";
+    this.noteSaid = `Listening for sound from the ${this.audio.access().computer?.label.toLowerCase() ?? "share"}…`;
+    this.renderNote();
+    const meter = this.$("#note-level");
+    const heard = await this.audio.hearShare({ onLevel: (peak) => meter.style.setProperty("--level", Math.min(1, peak * 4)) });
+    if (!this.pending) return;
+    if (heard === "sound") return this.startPending();
+    this.noteMode = "silent";
+    this.noteSaid = heard === "silent"
+      ? `No sound from the ${this.audio.access().computer?.label.toLowerCase() ?? "share"} in 8 seconds. Unmute the call or press play, then listen again, or share another tab.`
+      : "The share stopped. Share the meeting's tab again, or record your mic only.";
+    this.renderNote();
+  }
+
+  async startPending() {
     const { title, details } = this.pending;
     this.closeNote();
     await this.record(title, details);
@@ -687,13 +713,21 @@ export class Minutes {
   renderNote() {
     const $ = this.$;
     const access = this.audio.access();
+    const mode = this.noteMode;
     const limits = audioLimits(this.platform, access.computer?.via === "monitor" ? access.computer.label : null);
     $("#note-text").replaceChildren(...limits.text.map((line) => Object.assign(document.createElement("p"), { textContent: line })));
     $("#note-said").textContent = this.noteSaid;
     $("#note-said").hidden = !this.noteSaid;
-    $("#note-share").hidden = !limits.share;
-    if (limits.share) $("#note-share").textContent = limits.share;
-    $("#note-mic").textContent = access.computer ? "Record" : access.mic ? "Record my mic only" : "Allow the mic and record";
+    $("#note-said").classList.toggle("alarm", mode === "silent" || (mode === "ask" && Boolean(this.noteSaid)));
+    $("#note-level").hidden = mode !== "listening";
+    $("#note-listen").hidden = mode !== "silent";
+    $("#note-share").hidden = !limits.share || mode === "listening";
+    if (limits.share) $("#note-share").textContent = mode === "silent" ? "Share another tab" : limits.share;
+    $("#note-share").className = mode === "silent" ? "secondary" : "primary";
+    $("#note-mic").hidden = mode === "listening";
+    $("#note-mic").textContent = mode === "silent" ? "Record anyway"
+      : access.computer ? "Record" : access.mic ? "Record my mic only" : "Allow the mic and record";
+    for (const id of ["#note-share", "#note-mic", "#note-listen"]) $(id).disabled = mode === "asking";
   }
 
   async record(title, details) {

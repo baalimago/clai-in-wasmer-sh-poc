@@ -445,3 +445,52 @@ test("the audio note says bluntly what this browser cannot record", () => {
   }
   assert.match(audioLimits({ os: "linux", browser: "firefox" }, "Monitor of Built-in Audio").text.join(" "), /Monitor of Built-in Audio/);
 });
+
+// A clock the test moves: `sleep` advances it instead of waiting.
+const fakeClock = () => {
+  let now = 0;
+  return { now: () => now, sleep: async (ms) => { now += ms; } };
+};
+
+// An AudioContext's stand-in whose analyser hears `peaks`, one per look, then silence.
+const hearing = (peaks) => {
+  const heard = [...peaks];
+  const state = { closed: false };
+  class Context {
+    resume = async () => {};
+    close = async () => { state.closed = true; };
+    createMediaStreamSource = () => ({ connect() {}, disconnect() {} });
+    createAnalyser = () => ({ fftSize: 4, getFloatTimeDomainData: (data) => data.fill(heard.shift() ?? 0) });
+  }
+  return { Context, state };
+};
+
+const listening = async (peaks) => {
+  const { Context, state } = hearing(peaks);
+  const media = fakeMedia([], async () => fakeStream());
+  const audio = new AudioInputs({ send: () => {}, notice: () => {}, media, Context, ...fakeClock() });
+  await audio.share();
+  return { audio, state };
+};
+
+test("a share is heard once its sound passes the threshold", async () => {
+  const { audio, state } = await listening([0, 0.001, 0.2]);
+  const levels = [];
+  assert.equal(await audio.hearShare({ onLevel: (l) => levels.push(l) }), "sound");
+  assert.deepEqual(levels, [0, 0.001, 0.2].map(Math.fround));
+  assert.ok(state.closed, "the listening context is closed");
+});
+
+test("a share with no sound for the whole wait is silent", async () => {
+  const { audio } = await listening([]);
+  assert.equal(await audio.hearShare({ ms: 2000 }), "silent");
+});
+
+test("nothing shared, or a share that ends while listening, is said so", async () => {
+  const { Context } = hearing([]);
+  const bare = new AudioInputs({ send: () => {}, notice: () => {}, media: fakeMedia([]), Context, ...fakeClock() });
+  assert.equal(await bare.hearShare(), "unshared");
+  const { audio } = await listening([]);
+  const heard = audio.hearShare({ ms: 2000, onLevel: () => audio.unshare() });
+  assert.equal(await heard, "ended");
+});

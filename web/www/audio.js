@@ -41,8 +41,13 @@ export class AudioInputs {
   // `send(name, bytes)` hands captured samples to the machine; `notice(text)` tells the user;
   // `changed()` follows what is captured and shared; `relist()` follows `listing()`, which the
   // machine's /run/audio/devices holds. `media` and `Context` are the browser's mediaDevices and
-  // AudioContext.
-  constructor({ send, notice, changed = () => {}, relist = () => {}, media = globalThis.navigator?.mediaDevices, Context = globalThis.AudioContext }) {
+  // AudioContext, `now` and `sleep` the clock that hearShare waits on.
+  constructor({
+    send, notice, changed = () => {}, relist = () => {}, media = globalThis.navigator?.mediaDevices, Context = globalThis.AudioContext,
+    now = () => Date.now(), sleep = (ms) => new Promise((done) => setTimeout(done, ms)),
+  }) {
+    this.now = now;
+    this.sleep = sleep;
     this.send = send;
     this.notice = notice;
     this.changed = changed;
@@ -135,6 +140,37 @@ export class AudioInputs {
     this.relist();
     this.changed();
     return "shared";
+  }
+
+  // Listens to the share for up to `ms`: "sound" once its loudest sample passes `threshold`,
+  // "silent" if none does, "ended" when the share stops first and "unshared" without one.
+  // `onLevel(peak)` follows what it hears.
+  async hearShare({ ms = 8000, threshold = 0.01, onLevel = () => {} } = {}) {
+    const shared = this.shared;
+    if (!shared) return "unshared";
+    const context = new this.Context();
+    const source = context.createMediaStreamSource(shared.stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    const until = this.now() + ms;
+    try {
+      await context.resume();
+      for (;;) {
+        analyser.getFloatTimeDomainData(samples);
+        let peak = 0;
+        for (const v of samples) peak = Math.max(peak, Math.abs(v));
+        onLevel(peak);
+        if (this.shared !== shared) return "ended";
+        if (peak >= threshold) return "sound";
+        if (this.now() >= until) return "silent";
+        await this.sleep(50);
+      }
+    } finally {
+      source.disconnect();
+      await context.close();
+    }
   }
 
   // Ends the share, if there is one.
