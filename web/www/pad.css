@@ -223,16 +223,20 @@ body, .top { background: var(--pad-paper); }
 .access p::before { content: "☐ "; color: #8a7f68; }
 .access p.allowed::before { content: "☑ "; color: var(--pad-accent); }
 
-/* The audio note: a green sticky note put on the pad before a recording, saying plainly what this
+/* The audio note: a green sticky note smacked onto the pad before a recording, over everything and
+   with nothing dimmed, saying plainly what this
    browser can and cannot record. The recording starts once it is answered. */
 .audio-note {
   box-sizing: border-box; width: min(520px, calc(100vw - 32px)); padding: 26px 30px 28px; border: 0; overflow: visible;
   font: 22px/var(--rule) var(--hand); color: #2f3b24; transform: rotate(1deg);
   background: linear-gradient(170deg, #e2f5c4, #d3ecaa 60%, #c4e293);
-  box-shadow: 0 1px 1px rgba(0, 0, 0, .1), 0 18px 34px -8px rgba(40, 60, 10, .45);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 8px 12px 14px -8px rgba(40, 50, 10, .45);
 }
-.audio-note::backdrop { background: rgba(70, 55, 25, .28); }
-.audio-note::before { content: ""; position: absolute; top: -12px; left: 50%; width: 110px; height: 26px; margin-left: -55px; background: rgba(255, 255, 255, .55); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); transform: rotate(-2deg); }
+.audio-note::backdrop { background: none; }
+/* No tape: a post-it holds by its glue strip, a touch darker along the top, and its free bottom
+   edge lifts off the pad, its shadow deepest at the bottom right. */
+.audio-note::before { content: ""; position: absolute; inset: 0 0 auto; height: 34px; background: linear-gradient(rgba(90, 120, 40, .1), transparent); pointer-events: none; }
+
 .audio-note h2 { margin: 0 0 8px; font: 700 30px/var(--rule) var(--hand); }
 .audio-note p { margin: 0 0 8px; }
 .audio-note .said { color: var(--pad-accent); font-weight: 700; }
@@ -244,11 +248,12 @@ body, .top { background: var(--pad-paper); }
 .audio-note .inline { border: 0; background: none; padding: 0; font-weight: 400; color: #4a5a3a; text-decoration: underline; }
 .audio-note button:disabled { opacity: .5; cursor: progress; }
 @media (prefers-reduced-motion: no-preference) {
-  .audio-note[open] { animation: note-put .7s cubic-bezier(.25, .75, .3, 1) backwards; }
-  .audio-note[open]::before { animation: tape-on .28s cubic-bezier(.3, 1.4, .5, 1) .65s backwards; }
+  .audio-note[open] { animation: note-smack .38s cubic-bezier(.2, .9, .3, 1) backwards; }
 }
-@keyframes note-put {
-  0% { transform: translate(200px, -90vh) rotate(-14deg) scale(1.08); }
-  75% { transform: translate(-4px, 8px) rotate(2.5deg) scale(1.03); }
+/* Slapped down by a palm: in from above the pad, flattened on impact, settling with a wobble. */
+@keyframes note-smack {
+  0% { opacity: 0; transform: translateY(-40px) rotate(-6deg) scale(1.25); box-shadow: 0 50px 50px -10px rgba(40, 60, 10, .3); }
+  45% { opacity: 1; transform: rotate(2.2deg) scale(.97, .95); box-shadow: 0 2px 4px rgba(40, 60, 10, .4); }
+  70% { transform: rotate(.4deg) scale(1.01); }
   100% { transform: rotate(1deg); }
 }
