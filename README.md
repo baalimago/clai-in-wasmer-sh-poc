@@ -33,8 +33,12 @@ OpenAI's API and slivingdoc's both answer a browser's CORS preflight. So it is a
 ```sh
 make dist        # dist/: the site, 155 MB of it in dist/public
 make check-dist  # the dist in headless Chromium, served with only the headers Edge will send
-cd dist && wasmer deploy
+make deploy      # check-dist, then wasmer deploy: the site on Edge
 ```
+
+`make deploy` needs the `wasmer` CLI (`curl https://get.wasmer.io -sSfL | sh`, or the `wasmer`
+of `components/wasmer`, built) and a login (`wasmer login`, or `WASMER_TOKEN`); `wasmer deploy`
+asks for the owner on the first deploy and writes it to `dist/app.yaml`.
 
 `dist/` is `edge/` (a `wasmer.toml` that serves `public` with `wasmer/static-web-server`, its
 `settings/config.toml`, and an `app.yaml`) and `dist/public`, which is `web/www` and the three

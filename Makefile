@@ -16,7 +16,7 @@ RUSTUP_HOME ?= $(if $(wildcard $(HOME)/.rustup/toolchains/*),$(HOME)/.rustup,$(H
 CARGO := $(CARGO_HOME)/bin/cargo
 export CARGO_HOME RUSTUP_HOME
 
-.PHONY: poc serve check build dist check-dist packages submodules clean FORCE
+.PHONY: poc serve check build dist check-dist deploy packages submodules clean FORCE
 
 # The page's own crate needs Rust; say so in words a first-time reader can act on.
 CARGO_MISSING = @test -x $(CARGO) || { echo "no cargo at $(CARGO): install rustup, see Prerequisites in README.md"; exit 1; }
@@ -54,6 +54,12 @@ dist: build
 # site that is already up instead, such as the deployed app.
 check-dist: dist
 	cd $(WEB) && node check-dist.mjs
+
+# `make deploy` ships the site: check-dist rebuilds dist from the tree and checks it, then
+# wasmer deploy pushes it, asking for the owner on the first deploy and writing it to app.yaml.
+deploy: check-dist
+	@command -v wasmer >/dev/null || { echo "no wasmer on PATH: see Hosting it on Wasmer Edge in README.md"; exit 1; }
+	cd $(DIST) && wasmer deploy
 
 # The page's crate builds against components/wasmer, whose workspace needs two of its own
 # submodules; its test suites' submodules stay out.
