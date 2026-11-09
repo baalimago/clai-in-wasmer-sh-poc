@@ -184,7 +184,7 @@ $(WWW)/pkg/clai_web.js: $(WASM_BINDGEN) FORCE | submodules
 
 $(WASM_BINDGEN):
 	$(CARGO_MISSING)
-	$(CARGO) install wasm-bindgen-cli --version $(WASM_BINDGEN_VERSION) --locked --root $(CURDIR)/.tools
+	cd $(WEB) && $(CARGO) install wasm-bindgen-cli --version $(WASM_BINDGEN_VERSION) --locked --root $(CURDIR)/.tools
 
 $(WEB)/node_modules: $(WEB)/package-lock.json
 	cd $(WEB) && npm ci
