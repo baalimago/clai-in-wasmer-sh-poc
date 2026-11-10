@@ -54,11 +54,14 @@ takes up to 500 MB of files per app.
 
 The page is **Minutes**, a meeting-notes app. **Peek under the hood** opens the machine it runs
 on below it: what each click started, opened and connected to, and the machine's terminal.
-Nothing the app does needs the peek; its buttons run programs on the machine directly:
+Nothing the app does needs the peek; its buttons run programs on the machine directly: When
+one fails, a note hangs under the peek button with what went wrong (clai's `error` record: the
+provider's status and code, and clai's remedy when it has one; a failed tool is a warning) and a
+link that opens the peek's terminal, where every record is.
 
 | Button | Runs |
 | --- | --- |
-| Start recording | `clai -reply-only -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook`. The agent picks the inputs from the meeting: the mic for a room, the mic and the default sink for a call |
+| Start recording | `clai -json -reply-only -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook`. With `-json` every line clai prints is a record (`web/www/agent.js` reads them): the app takes the reply from the `reply` records, and each line also goes to the console. The agent picks the inputs from the meeting: the mic for a room, the mic and the default sink for a call |
 | Stop and summarize | types Enter on the console, which ends clai's `audio_record` |
 | Before you record (a checklist on a post-it) | **Allow the mic** asks for the microphone; **Share a tab with your call** asks for a screen or tab, whose audio is the sink `browser-tab` until the share stops; the page then listens to it and ticks **Sound heard** once sound comes through. Start recording stays off until all three are ticked, or the computer's audio is skipped with **record the mic only** |
 | Send (answer the agent) | the same `clai`, with `-re` and the answer as the query |

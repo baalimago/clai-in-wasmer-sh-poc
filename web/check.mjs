@@ -337,9 +337,45 @@ try {
     });
     console.log(`Minutes, Record: ${JSON.stringify(result)}`);
     if (!stop || !replied || result.status !== 0 || !result.stages.includes("recorded") ||
-      result.ffmpegUnder !== "clai" || !result.command.includes("clai -reply-only -profile-path /tmp/meeting.json")) {
+      result.ffmpegUnder !== "clai" || !result.command.includes("clai -json -reply-only -profile-path /tmp/meeting.json")) {
       console.error("\nFAIL: Minutes' Record did not show Stop, run ffmpeg under clai, or bring the agent's reply back");
       process.exitCode = 1;
+    }
+    // A run that fails: clai's error record becomes a note hung under the peek button, which
+    // opens the terminal, where the record itself is.
+    {
+      await page.evaluate(() => {
+        window.minutes.config.flags = "-cm no-such-model";
+        return window.minutes.answer("hello");
+      });
+      const note = await page.waitForSelector(".note.error", { timeout: 30_000 }).then(() => true, () => false);
+      const shown = await page.evaluate(() => {
+        const el = document.querySelector(".note.error");
+        const anchor = document.querySelector("#peek").getBoundingClientRect();
+        const at = el?.getBoundingClientRect();
+        return {
+          title: el?.querySelector("strong")?.textContent,
+          detail: el?.querySelector(".note-detail")?.textContent,
+          nudged: document.querySelector("#peek").classList.contains("nudge"),
+          under: Boolean(at) && at.top >= anchor.bottom && at.right <= anchor.right + 1,
+          status: window.minutes.recording.status,
+        };
+      });
+      if (note) await page.click(".note.error .note-peek");
+      const opened = await page.evaluate(() => ({
+        hood: document.querySelector("#hood").classList.contains("open"),
+        tab: document.querySelector("[role=tab][aria-selected=true]")?.dataset.tab,
+        record: window.terminalText().includes('{"type":"error"'),
+      }));
+      console.log(`Minutes, a failed run: ${JSON.stringify({ ...shown, ...opened })}`);
+      if (!note || shown.status === 0 || shown.title !== "The agent stopped with an error" || !shown.detail?.includes("no-such-model") ||
+        !shown.nudged || !shown.under || !opened.hood || opened.tab !== "terminal" || !opened.record) {
+        console.error("\nFAIL: a failed run did not hang a note under the peek button that opens the terminal on clai's error record");
+        process.exitCode = 1;
+      }
+      await page.click(".note.error .note-close");
+      await page.click("#peek-close");
+      await page.evaluate(() => { window.minutes.config.flags = "-cm mock_test"; });
     }
     await page.click(".meeting >> text=Design review");
     const opened = await page

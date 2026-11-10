@@ -6,6 +6,7 @@
 import { mask } from "./hood.js";
 import { notePath, renderMarkdown } from "./markdown.js";
 import { audioLimits } from "./audio.js";
+import { AgentRun, problemOf, toolProblem } from "./agent.js";
 
 const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
 
@@ -88,12 +89,6 @@ export function describeFile(path) {
   const title = rest.join(" ").replaceAll("-", " ") || name;
   return { start, title: title.charAt(0).toUpperCase() + title.slice(1) };
 }
-
-// clai's status lines ("<time> ok: ...", "warning", "notice"), which it prints on stdout even
-// with -reply-only.
-const STATUS_LINE = /^\S+ \x1b\[\d+m(?:ok|warning|notice)\x1b\[0m: .*\n?/gm;
-
-export const replyText = (stdout) => stdout.replace(STATUS_LINE, "").trim();
 
 // `2026-10-30T08-00Z`, the start in a notebook file's name, as a Date.
 export function startDate(start) {
@@ -268,9 +263,13 @@ export class Minutes {
   // `machine.type(text)` types on its console. `hood` shows what a click ran, `model` is what
   // the machine did, `env` the variables every run gets, `audio` the inputs being captured.
   // `store` keeps the slivingdoc login and the OpenAI key in the browser: get(key),
-  // set(key, value), remove(key).
-  constructor({ root, machine, hood, model, env, audio, store, recordings, config, platform = { os: "other", browser: "other" } }) {
+  // set(key, value), remove(key). `peek(tab)` opens the under-the-hood view on a tab, and
+  // `anchor` is the button that does, which a note about a failure points at.
+  constructor({ root, machine, hood, model, env, audio, store, recordings, config, peek = () => {}, anchor = null, platform = { os: "other", browser: "other" } }) {
     this.platform = platform;
+    this.peek = peek;
+    this.anchor = anchor;
+    this.notes = new Map();
     this.root = root;
     this.machine = machine;
     this.hood = hood;
@@ -440,7 +439,7 @@ export class Minutes {
     const line = `clai profiles trust ${quote(profile)} </dev/null >&2 && { echo trust; cat ${TRUST}; } > /run/page/out`;
     const { status, body } = await this.run("Trust the agent", line, { topic: "trust", followUp: true });
     if (status !== 0 || !body) {
-      this.status(`clai could not fetch or trust ${profile} (exit ${status}). The peek's terminal shows why.`);
+      this.fail(`clai could not fetch or trust ${profile}`, `clai profiles trust ended with exit status ${status}.`);
       return false;
     }
     this.store.set(STORED_TRUST, compact(body));
@@ -589,8 +588,8 @@ export class Minutes {
     const { status, body } = await this.run("Refresh", line, { topic: "meetings", followUp });
     this.streams.delete("pull-failed");
     if (status !== 0 || body === null) return this.status(`Listing the notebook failed (exit ${status}).`);
-    if (!pullFailed && this.$("#status").textContent.startsWith("slivingdoc could not pull")) this.status("");
-    if (pullFailed) this.status("slivingdoc could not pull the notebook, so this list is what is on this machine. The peek's terminal shows why.");
+    if (!pullFailed) this.dismiss("slivingdoc could not pull the notebook");
+    if (pullFailed) this.fail("slivingdoc could not pull the notebook", "This list is what is on this machine.", "warn");
     this.meetings = parseList(body);
     this.render();
   }
@@ -656,8 +655,29 @@ export class Minutes {
     const flags = c.flags ? `${c.flags} ` : "";
     // slivingdoc's server then keeps the notebook the agent's file tools write in.
     const root = this.connected ? 'SLIVINGDOC_WORKSPACE_ROOT="$PWD" ' : "";
-    return `${this.cd()} && { echo reply; ${root}${env}clai -reply-only ${reply ? "-dre " : ""}-profile-path ${c.profile} ` +
-      `${flags}query ${quote(query)}; } > /run/page/out`;
+    // -json: every line clai prints, on either stream, is a record. Each goes to the page, which
+    // reads the reply and what went wrong from it, and to the console, where the peek shows it.
+    return `${this.cd()} && ${root}${env}clai -json -reply-only ${reply ? "-dre " : ""}-profile-path ${c.profile} ` +
+      `${flags}query ${quote(query)} 2>&1 | ` +
+      "while IFS= read -r line; do printf 'agent\\n%s\\n' \"$line\" > /run/page/out; printf '%s\\n' \"$line\" >&2; done; " +
+      "s=${PIPESTATUS[0]}; echo agent-end > /run/page/out; exit $s";
+  }
+
+  // Runs the agent with `line` and resolves to its exit status and reply. A tool that fails
+  // on the way and what stopped the run each become a note that points under the hood.
+  async runAgent(label, line, options = {}) {
+    const run = new AgentRun();
+    this.streams.set("agent", (body) => {
+      for (const text of body.split("\n")) {
+        const record = run.take(text);
+        if (record?.type === "tool_result" && record.ok === false) this.note(toolProblem(run.failures.at(-1)));
+      }
+    });
+    const { status } = await this.run(label, line, { ...options, topic: "agent-end" });
+    this.streams.delete("agent");
+    const problem = problemOf(run, status);
+    if (problem) this.note(problem);
+    return { status, reply: run.text, problem };
   }
 
   // Why a recording cannot start yet, or "" when it can.
@@ -723,12 +743,11 @@ export class Minutes {
     await this.showRecording(null);
     const line = this.agentLine(this.config.query(title, details, this.connected), false);
     const unwatch = this.watchStages("Record");
-    const { status, body } = await this.run("Record", line, {
-      topic: "reply",
+    const { status, reply, problem } = await this.runAgent("Record", line, {
       hint: "Stop and summarize types Enter on the console, which ends the agent's recording.",
     });
     unwatch();
-    await this.finish(status, body);
+    await this.finish(status, reply, problem);
   }
 
   async answer(text) {
@@ -736,9 +755,9 @@ export class Minutes {
     this.recording = { ...(this.recording ?? { title: this.current?.title ?? "Meeting" }), stages: new Set(), answering: true, done: false };
     this.show("meeting");
     const unwatch = this.watchStages("Answer");
-    const { status, body } = await this.run("Answer", this.agentLine(text, true), { topic: "reply" });
+    const { status, reply, problem } = await this.runAgent("Answer", this.agentLine(text, true));
     unwatch();
-    await this.finish(status, body);
+    await this.finish(status, reply, problem);
   }
 
   // Names for the speakers the transcript only labels: the agent, in the same conversation,
@@ -753,16 +772,17 @@ export class Minutes {
       "including the front matter, and save both files to the notebook again.";
     this.recording = { title: c.title, startedAt: new Date(), stages: new Set(), answering: true, done: false, path: c.path };
     this.show("meeting");
-    const { status, body } = await this.run("Name the speakers", this.agentLine(text, true), { topic: "reply" });
-    await this.finish(status, body);
+    const { status, reply, problem } = await this.runAgent("Name the speakers", this.agentLine(text, true));
+    await this.finish(status, reply, problem);
   }
 
   // The agent is done: the notes it filed open, else what it said shows.
-  async finish(status, body) {
+  async finish(status, reply, problem = null) {
     const r = this.recording;
     r.done = true;
     r.status = status;
-    r.reply = replyText(body ?? "");
+    r.reply = reply ?? "";
+    r.problem = problem;
     this.render();
     if (status !== 0) return;
     if (this.connected) await this.save(r.title);
@@ -789,7 +809,7 @@ export class Minutes {
     const line = `${this.cd()} && slivingdoc commit -m ${quote(`Minutes: ${title}`)} >&2`;
     const { status } = await this.run("Save to slivingdoc", line, { followUp: true });
     if (status !== 0) {
-      this.status("slivingdoc could not save the notes, so they are only on this machine. The peek's terminal shows why.");
+      this.fail("slivingdoc could not save the notes", "They are only on this machine.");
       return false;
     }
     return true;
@@ -854,6 +874,86 @@ export class Minutes {
 
   status(text) {
     this.$("#status").textContent = text;
+  }
+
+  // Something the app ran failed: a note with what and, under the hood, why.
+  fail(title, detail = "", level = "error") {
+    this.note({ level, title, detail, hint: null, code: null });
+  }
+
+  dismiss(title) {
+    for (const [key, el] of this.notes) {
+      if (!key.startsWith(`${title}\n`)) continue;
+      el.remove();
+      this.notes.delete(key);
+    }
+    this.placeNotes();
+  }
+
+  // A note about a problem, hung under the button that peeks under the hood and pointing at
+  // it: the terminal there has what the programs printed. An error stays until it is closed;
+  // a warning leaves by itself. The same note is shown once.
+  note({ level, title, detail, hint, code }) {
+    const host = document.querySelector("#notes");
+    const key = `${title}\n${detail}`;
+    if (!host || this.notes.has(key)) return;
+    const el = document.createElement("div");
+    el.className = `note ${level}`;
+    el.setAttribute("role", level === "error" ? "alert" : "status");
+    const head = document.createElement("strong");
+    head.textContent = title;
+    const close = document.createElement("button");
+    close.className = "note-close";
+    close.setAttribute("aria-label", "Close");
+    close.textContent = "✕";
+    const remove = () => {
+      el.remove();
+      this.notes.delete(key);
+      this.placeNotes();
+    };
+    close.onclick = remove;
+    el.append(head, close);
+    for (const [text, name] of [[detail, "note-detail"], [hint, "note-hint"]]) {
+      if (!text) continue;
+      const p = document.createElement("p");
+      p.className = name;
+      p.textContent = text;
+      el.append(p);
+    }
+    if (code) {
+      const tag = document.createElement("code");
+      tag.className = "note-code";
+      tag.textContent = code;
+      el.append(tag);
+    }
+    const look = document.createElement("button");
+    look.className = "note-peek";
+    look.textContent = "See what the machine printed";
+    look.onclick = () => {
+      this.peek("terminal");
+      this.placeNotes();
+    };
+    el.append(look);
+    host.append(el);
+    this.notes.set(key, el);
+    if (level !== "error") setTimeout(remove, 15_000);
+    this.placeNotes();
+  }
+
+  // Hangs the notes under the peek button, their arrow at its middle, and has the button
+  // pulse while there is one.
+  placeNotes() {
+    const host = document.querySelector("#notes");
+    if (!host) return;
+    const open = this.notes.size > 0;
+    host.hidden = !open;
+    this.anchor?.classList.toggle("nudge", open);
+    if (!open || !this.anchor) return;
+    const at = this.anchor.getBoundingClientRect();
+    const right = Math.max(8, document.documentElement.clientWidth - at.right);
+    host.style.top = `${Math.round(at.bottom + 12)}px`;
+    host.style.right = `${Math.round(right)}px`;
+    host.style.setProperty("--arrow", `${Math.round(at.width / 2)}px`);
   }
 
   show(view) {
@@ -1025,7 +1125,8 @@ export class Minutes {
     $("#stop").disabled = !live;
     $("#agent").hidden = !(r?.done && (r.status !== 0 || !this.current));
     $("#agent-text").innerHTML = r?.done
-      ? renderMarkdown(r.status === 0 ? r.reply || "_The agent said nothing._" : `The agent stopped with exit status ${r.status}. ${r.reply ?? ""}`)
+      ? renderMarkdown(r.status === 0 ? r.reply || "_The agent said nothing._"
+        : `${r.problem?.title ?? `The agent stopped with exit status ${r.status}`}. ${r.reply ?? ""}`)
       : "";
     if (!busy) return;
     const seconds = r.started ? Math.max(0, Math.round(((r.recordedAt ?? Date.now()) - r.started) / 1000)) : 0;

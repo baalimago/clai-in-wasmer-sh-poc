@@ -17,7 +17,10 @@ const fit = new FitAddon();
 term.loadAddon(fit);
 term.open(document.querySelector("#terminal"));
 fit.fit();
-addEventListener("resize", () => fit.fit());
+addEventListener("resize", () => {
+  fit.fit();
+  window.minutes?.placeNotes();
+});
 
 const hood = document.querySelector("#hood");
 const peekButton = document.querySelector("#peek");
@@ -254,6 +257,9 @@ minutes = new Minutes({
     },
   },
   recordings: new Recordings(globalThis.indexedDB),
+  // A note about a failure points at the peek and opens its terminal.
+  peek: showTab,
+  anchor: peekButton,
   config: window.minutesConfig ?? {},
   platform: platformOf(navigator),
 });

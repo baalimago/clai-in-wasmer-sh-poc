@@ -182,3 +182,25 @@ td:first-child { word-break: break-all; color: #fff; }
 .speaker q { color: var(--quiet); overflow-wrap: anywhere; }
 .speaker input { grid-column: 1 / -1; }
 .prose code { overflow-wrap: anywhere; white-space: normal; }
+
+/* Notes about a failure: hung under the peek button, their arrow on it. */
+.notes { position: fixed; z-index: 30; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 16px)); }
+.notes[hidden] { display: none; }
+.note { position: relative; padding: 12px 36px 12px 14px; border-radius: 10px; background: var(--hood); color: var(--hood-ink); border-left: 4px solid var(--red); box-shadow: 0 8px 24px rgb(14 17 22 / 28%); font-size: 13px; animation: note-in .18s ease-out; }
+.note.warn { border-left-color: #c98a12; }
+.note:first-child::before { content: ""; position: absolute; top: -8px; right: calc(var(--arrow, 60px) - 8px); border: 8px solid transparent; border-top: 0; border-bottom-color: var(--hood); }
+.note strong { display: block; color: #fff; }
+.note p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.note-detail { color: var(--hood-ink); }
+.note-hint { color: #9fd0ff; }
+.note-code { display: inline-block; margin-top: 6px; padding: 1px 6px; border-radius: 4px; background: var(--hood-card); color: var(--hood-quiet); }
+.note-close { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--hood-quiet); font-size: 12px; }
+.note-close:hover { background: var(--hood-card); color: #fff; }
+.note-peek { display: block; margin-top: 10px; padding: 0; border: 0; background: none; color: #fff; font: 500 12px var(--mono); text-decoration: underline; text-underline-offset: 3px; }
+.peek.nudge { animation: peek-nudge 1.6s ease-in-out infinite; }
+@keyframes note-in { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes peek-nudge { 50% { box-shadow: 0 0 0 5px rgb(179 38 30 / 30%); } }
+@media (prefers-reduced-motion: reduce) {
+  .note, .peek.nudge { animation: none; }
+  .peek.nudge { box-shadow: 0 0 0 3px rgb(179 38 30 / 45%); }
+}

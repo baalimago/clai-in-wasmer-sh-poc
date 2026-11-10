@@ -10,9 +10,10 @@ import { groupLines, writingMs } from "./www/pen.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import { AudioInputs, audioLimits, platformOf, withOsVersion } from "./www/audio.js";
+import { AgentRun, brief, problemOf, toolProblem } from "./www/agent.js";
 import {
   DEFAULTS, accountOf, precheck, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
-  parseSpaces, profilePage, replyText, signoutResult, splitMessage, summariesIn, unknownSpeakers,
+  parseSpaces, profilePage, signoutResult, splitMessage, summariesIn, unknownSpeakers,
   withoutHeading,
 } from "./www/minutes.js";
 
@@ -102,10 +103,88 @@ test("a notebook file names its meeting", () => {
   assert.deepEqual(parseNote("no front matter"), { fields: {}, body: "no front matter" });
 });
 
-test("the agent's reply leaves out clai's status lines", () => {
-  const stdout = "2026-10-30T12:45:14Z \x1b[32mok\x1b[0m: added new field(s)\n" +
-    "2026-10-30T12:45:14Z \x1b[33mwarning\x1b[0m: found none\nWho is Speaker A?\n";
-  assert.equal(replyText(stdout), "Who is Speaker A?");
+test("the agent's reply is its last reply record, whatever streamed before it", () => {
+  const run = new AgentRun();
+  for (const line of [
+    '{"type":"reply_delta","text":"Let me "}',
+    '{"type":"reply_delta","text":"record."}',
+    '{"type":"reply","text":"Let me record."}',
+    '{"type":"tool_call","name":"audio_record","inputs":{}}',
+    '{"type":"tool_result","name":"audio_record","ok":true,"output":"saved /tmp/a.wav"}',
+    '{"type":"diagnostic","name":"clai.run_summary","subsystem":"clai","level":"info","message":"query done","facts":{}}',
+    '{"type":"reply_delta","text":"Who is "}',
+    '{"type":"reply_delta","text":"Speaker A?"}',
+    '{"type":"reply","text":"Who is Speaker A?"}',
+    "",
+  ]) run.take(line);
+  assert.equal(run.text, "Who is Speaker A?");
+  assert.deepEqual([run.errors, run.failures, run.warnings, run.stray], [[], [], [], []]);
+  assert.equal(problemOf(run, 0), null);
+});
+
+test("a reply that never closed is what streamed of it", () => {
+  const run = new AgentRun();
+  run.take('{"type":"reply_delta","text":"Hello wor"}');
+  assert.equal(run.text, "Hello wor");
+});
+
+test("a rejected key is a problem that names the status, clai's remedy and the provider's code", () => {
+  const run = new AgentRun();
+  const message = 'run step 0: stream completions: authentication failed, status: 401, provider code: invalid_api_key, body: {"error":{"message":"Incorrect API key provided"}}';
+  run.take(JSON.stringify({ type: "error", message, causes: [{ message, status: 401, provider_code: "invalid_api_key", remedies: ["Set OPENAI_API_KEY to your API key"] }] }));
+  assert.deepEqual(problemOf(run, 1), {
+    level: "error",
+    title: "The provider rejected the API key",
+    detail: "authentication failed, status: 401, provider code: invalid_api_key",
+    hint: "Set OPENAI_API_KEY to your API key",
+    code: "invalid_api_key",
+  });
+});
+
+test("an error without a status keeps clai's words, short", () => {
+  const run = new AgentRun();
+  const message = "failed to create text querier: failed to find text querier for model: opus-5.5";
+  run.take(JSON.stringify({ type: "error", message, causes: [{ message }] }));
+  const problem = problemOf(run, 1);
+  assert.equal(problem.title, "The agent stopped with an error");
+  assert.equal(problem.detail, message);
+  assert.equal(brief(`run step 2: ${"x".repeat(400)}`).length, 220);
+});
+
+test("an interrupt and a cut-off reply say what they are", () => {
+  const titled = (message) => {
+    const run = new AgentRun();
+    run.take(JSON.stringify({ type: "error", message, causes: [{ message }] }));
+    return problemOf(run, 130).title;
+  };
+  assert.equal(titled("interrupted by signal: interrupt"), "The agent was interrupted");
+  assert.equal(titled("run step 0: completion stream error: transport failure: the reply is truncated: unexpected EOF"), "The reply was cut off");
+  assert.equal(titled("run step 0: completion stream error: unexpected provider response, status: 200, body: the provider returned no completion"), "The provider sent no reply");
+});
+
+test("a failed exit without an error record still is a problem, with the last thing said", () => {
+  const run = new AgentRun();
+  run.take("bash: clai: command not found");
+  assert.deepEqual(run.stray, ["bash: clai: command not found"]);
+  assert.deepEqual(problemOf(run, 127), {
+    level: "error", title: "The agent stopped with exit status 127", detail: "bash: clai: command not found", hint: null, code: null,
+  });
+});
+
+test("a tool that failed is a warning, and a missing program is named as one", () => {
+  const run = new AgentRun();
+  run.take(JSON.stringify({
+    type: "tool_result", name: "audio_sources", ok: false,
+    output: "ERROR: failed to run tool: audio_sources, error: ffmpeg -sinks pulse failed: exit status 127: /bin/bash: /usr/local/bin/ffmpeg: No such file or directory",
+    error: "failed to run tool: audio_sources, error: ffmpeg -sinks pulse failed: exit status 127: /bin/bash: /usr/local/bin/ffmpeg: No such file or directory",
+  }));
+  const problem = toolProblem(run.failures[0]);
+  assert.equal(problem.level, "warn");
+  assert.equal(problem.title, "The agent's audio_sources tool failed");
+  assert.equal(problem.hint, "A program the tool starts is missing on the machine.");
+  assert.equal(toolProblem({ name: "cat", error: "permission denied" }).hint, null);
+  // The run itself went on, so nothing stopped it.
+  assert.equal(problemOf(run, 0), null);
 });
 
 test("the process tree folds a wrapper into its program and draws its lines", () => {
