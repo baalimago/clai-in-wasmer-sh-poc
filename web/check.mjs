@@ -3,6 +3,7 @@
 // clai calls an MCP server uvx starts, that its async commands run, that slivingdoc serves
 // with libgit2 behind it, and that ffmpeg and clai's meeting-transcriber profile record the
 // page's microphone.
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { chromium } from "playwright";
@@ -160,6 +161,65 @@ const SIGNIN = (port) => [
   { line: "cat ~/.config/slivingdoc/credentials.json", status: 0, prints: '"logins": []' },
 ];
 
+// Sign in with OpenRouter against a stand-in for its two endpoints: the sign-in page sends the
+// tab back to the callback page with a code, which the app trades, with the verifier of the
+// challenge it sent, for a key. Disconnect forgets the key and links to where it is deleted.
+async function checkOpenRouterSignin(context, page) {
+  const KEY = "sk-or-v1-check-not-a-key";
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST, OPTIONS" };
+  const sent = { challenge: null, exchange: null };
+  const authPage = (url) => url.hostname === "openrouter.ai" && url.pathname === "/auth";
+  const keysApi = (url) => url.hostname === "openrouter.ai" && url.pathname === "/api/v1/auth/keys";
+  await context.route(authPage, (route) => {
+    const url = new URL(route.request().url());
+    sent.challenge = url.searchParams.get("code_challenge");
+    const back = new URL(url.searchParams.get("callback_url"));
+    back.search = new URLSearchParams({ code: "check-code", state: url.searchParams.get("state") }).toString();
+    return route.fulfill({ status: 302, headers: { location: back.href } });
+  });
+  await context.route(keysApi, (route) => {
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    sent.exchange = route.request().postDataJSON();
+    return route.fulfill({ status: 200, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify({ key: KEY }) });
+  });
+  const fail = (why) => {
+    console.error(`\nFAIL: Sign in with OpenRouter: ${why}`);
+    process.exitCode = 1;
+  };
+  try {
+    await page.click("#signin-openrouter");
+    const signed = await page
+      .waitForFunction((key) => window.minutes.env.get("OPENROUTER_API_KEY") === key, KEY, { timeout: 20_000 })
+      .then(() => true, () => false);
+    if (!signed) return fail(`no key reached the agents' env (exchange sent ${JSON.stringify(sent.exchange)})`);
+    const verifier = sent.exchange?.code_verifier ?? "";
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    if (sent.exchange.code !== "check-code" || sent.exchange.code_challenge_method !== "S256" || challenge !== sent.challenge) {
+      return fail(`the exchange did not prove the challenge: ${JSON.stringify(sent.exchange)}, challenge ${sent.challenge}`);
+    }
+    const state = await page.evaluate(() => ({
+      kept: localStorage.getItem("minutes.openrouter-key"),
+      chip: document.querySelector("#key-chip").textContent,
+      card: document.querySelector("#provider-card").hidden,
+      line: window.minutes.agentLine("q", false),
+    }));
+    console.log(`openrouter: ${state.chip}`);
+    if (state.kept !== KEY || !state.chip.startsWith("OpenRouter:") || !state.card || !state.line.includes("-cm 'or:openai/gpt-5.6-luna' -am ")) {
+      return fail(`after the sign-in: ${JSON.stringify(state)}`);
+    }
+    await page.click("#change-key");
+    const manage = `https://openrouter.ai/keys/${createHash("sha256").update(KEY).digest("hex")}`;
+    const linked = await page
+      .waitForFunction((href) => document.querySelector("#provider-manage").href === href && !document.querySelector("#provider-manage").hidden, manage, { timeout: 5_000 })
+      .then(() => true, () => false);
+    const forgot = await page.evaluate(() => [window.minutes.env.has("OPENROUTER_API_KEY"), localStorage.getItem("minutes.openrouter-key")]);
+    if (!linked || forgot[0] || forgot[1] !== null) fail(`Disconnect left ${JSON.stringify(forgot)} or no link to ${manage}`);
+  } finally {
+    await context.unroute(authPage);
+    await context.unroute(keysApi);
+  }
+}
+
 const server = await startServer();
 const browser = await chromium.launch({
   args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
@@ -187,7 +247,7 @@ try {
       query: () => "tool_audio_sources tool_audio_record tool_audio_transcribe",
     };
   });
-  page.on("pageerror", (error) => console.error("page error:", error.message));
+  page.on("pageerror", (error) => console.error("page error:", error.stack ?? error.message));
   await page.goto(`http://localhost:${server.address().port}/`);
   await page.waitForSelector("body[data-ready]", { timeout: 120_000 });
   for (const { line, status: want } of COMMANDS) {
@@ -245,22 +305,34 @@ try {
         const context = new AudioContext();
         const destination = context.createMediaStreamDestination();
         const tone = context.createOscillator();
-        tone.connect(destination);
+        // Silent until the check turns it up: nobody has spoken yet.
+        window.shareVolume = context.createGain();
+        window.shareVolume.gain.value = 0;
+        tone.connect(window.shareVolume).connect(destination);
         tone.start();
         const video = document.createElement("canvas").captureStream().getVideoTracks();
         return new MediaStream([...destination.stream.getAudioTracks(), ...video]);
       };
     });
-    // The checklist's share line asks for it (here, past the fake monitor that already ticks it),
-    // and the tone ticks off its sound.
+    // The checklist's share line asks for it (here, past the fake monitor that already ticks it).
+    // A silent share already lets a recording start; the tone then ticks off its sound.
     await page.evaluate(() => window.minutes.shareComputer());
     if (!(await page.textContent("#access-computer")).includes("Shared screen or tab")) {
       console.error("\nFAIL: the checklist does not say a screen is shared");
       process.exitCode = 1;
     }
-    const heard = await page.waitForSelector("#access-sound.allowed", { timeout: 10_000 }).then(() => true, () => false);
+    const early = await page.evaluate(() => ({
+      heard: document.querySelector("#access-sound").classList.contains("allowed"),
+      start: !document.querySelector("#record-form > .primary").disabled,
+    }));
+    if (early.heard || !early.start) {
+      console.error(`\nFAIL: before any sound, Start recording should be on and the sound unticked: ${JSON.stringify(early)}`);
+      process.exitCode = 1;
+    }
+    await page.evaluate(() => { window.shareVolume.gain.value = 1; });
+    const heard = await page.waitForSelector("#access-sound.allowed", { timeout: 20_000 }).then(() => true, () => false);
     if (!heard || (await page.isDisabled("#record-form > .primary"))) {
-      console.error("\nFAIL: the checklist did not hear the share, so Start recording stays off");
+      console.error("\nFAIL: the checklist did not hear the share once it played, or Start recording went off");
       process.exitCode = 1;
     }
   }
@@ -294,6 +366,7 @@ try {
   // a meeting of the notebook opens as its summary and transcript, rendered.
   if (bash) {
     await page.evaluate((line) => window.runCommand(line), NOTEBOOK);
+    await checkOpenRouterSignin(context, page);
     await page.fill("#key-input", "sk-test-not-a-key");
     await page.click("#key-form button");
     // The key stays in this browser for this site, so a return to it needs no paste.
@@ -319,6 +392,8 @@ try {
     const replied = await page
       .waitForSelector("#agent:not([hidden])", { timeout: 60_000 })
       .then(() => true, () => false);
+    // The recording is copied out of the machine once the agent is done, whatever it said.
+    await page.waitForSelector("#recording-download:not([hidden])", { timeout: 30_000 }).catch(() => {});
     const result = await page.evaluate(() => {
       const r = window.minutes.recording;
       const action = [...window.hoodModel.procs.values()].find((p) => p.action.startsWith("minutes:Record"))?.action;
@@ -333,20 +408,24 @@ try {
         stages: [...r.stages],
         ffmpegUnder: ancestors.find((name) => name !== "ffmpeg" && name !== "bash"),
         command: window.hoodModel.tree(action).map((n) => n.proc.argv[2]).join(" "),
+        // The recording is kept in the browser and can be downloaded.
+        download: document.querySelector("#recording-download").hidden ? null : document.querySelector("#recording-download").textContent,
       };
     });
     console.log(`Minutes, Record: ${JSON.stringify(result)}`);
     if (!stop || !replied || result.status !== 0 || !result.stages.includes("recorded") ||
-      result.ffmpegUnder !== "clai" || !result.command.includes("clai -json -reply-only -profile-path /tmp/meeting.json")) {
-      console.error("\nFAIL: Minutes' Record did not show Stop, run ffmpeg under clai, or bring the agent's reply back");
+      result.ffmpegUnder !== "clai" || !result.command.includes("clai -json -reply-only -n -profile-path /tmp/meeting.json") ||
+      !/^Download the recording \(\d/.test(result.download ?? "")) {
+      console.error("\nFAIL: Minutes' Record did not show Stop, run ffmpeg under clai, bring the agent's reply back, or keep the recording for download");
       process.exitCode = 1;
     }
     // A run that fails: clai's error record becomes a note hung under the peek button, which
     // opens the terminal, where the record itself is.
     {
-      await page.evaluate(() => {
+      const ran = await page.evaluate(async () => {
         window.minutes.config.flags = "-cm no-such-model";
-        return window.minutes.answer("hello");
+        const { status, reply, problem } = await window.minutes.runAgent("Answer", window.minutes.agentLine("hello", false));
+        return { status, reply, level: problem?.level };
       });
       const note = await page.waitForSelector(".note.error", { timeout: 30_000 }).then(() => true, () => false);
       const shown = await page.evaluate(() => {
@@ -358,19 +437,21 @@ try {
           detail: el?.querySelector(".note-detail")?.textContent,
           nudged: document.querySelector("#peek").classList.contains("nudge"),
           under: Boolean(at) && at.top >= anchor.bottom && at.right <= anchor.right + 1,
-          status: window.minutes.recording.status,
         };
       });
       if (note) await page.click(".note.error .note-peek");
       const opened = await page.evaluate(() => ({
         hood: document.querySelector("#hood").classList.contains("open"),
         tab: document.querySelector("[role=tab][aria-selected=true]")?.dataset.tab,
-        record: window.terminalText().includes('{"type":"error"'),
+        // The record drawn, not its JSON, and the note's link selects it.
+        record: window.terminalText().includes("error: failed to create text querier") && !window.terminalText().includes('{"type":"error"'),
+        selected: window.terminalSelection(),
       }));
-      console.log(`Minutes, a failed run: ${JSON.stringify({ ...shown, ...opened })}`);
-      if (!note || shown.status === 0 || shown.title !== "The agent stopped with an error" || !shown.detail?.includes("no-such-model") ||
-        !shown.nudged || !shown.under || !opened.hood || opened.tab !== "terminal" || !opened.record) {
-        console.error("\nFAIL: a failed run did not hang a note under the peek button that opens the terminal on clai's error record");
+      console.log(`Minutes, a failed run: ${JSON.stringify({ ...ran, ...shown, ...opened })}`);
+      if (!note || ran.status === 0 || ran.level !== "error" || shown.title !== "The agent stopped with an error" || !shown.detail?.includes("no-such-model") ||
+        !shown.nudged || !shown.under || !opened.hood || opened.tab !== "terminal" || !opened.record ||
+        !opened.selected.includes("no-such-model")) {
+        console.error("\nFAIL: a failed run did not hang a note under the peek button that opens the terminal with clai's error selected");
         process.exitCode = 1;
       }
       await page.click(".note.error .note-close");
@@ -390,6 +471,47 @@ try {
     if (!opened || meeting.title !== "Design review" || meeting.item !== "Ship the peek") {
       console.error("\nFAIL: the notebook's meeting did not open as its rendered summary and transcript");
       process.exitCode = 1;
+    }
+    // A correction: the line's words open in place, Enter keeps them, and Save writes the file.
+    if (opened) {
+      await page.click("#transcript .utt-words");
+      await page.fill("#transcript textarea.utt-edit", "Ship it on Friday.");
+      await page.keyboard.press("Enter");
+      const counted = await page.textContent("#fixes-count");
+      await page.click("#fixes-save");
+      const saved = await page
+        .waitForFunction(() => document.querySelector("#fixes-count").textContent === "Saved", null, { timeout: 30_000 })
+        .then(() => true, () => false);
+      const file = await page.evaluate(async () =>
+        (await window.minutes.readMeeting("meetings/summaries/2026-10-28T09-00Z_design-review.md", "Check", true))?.transcript);
+      console.log(`Minutes, a correction: ${JSON.stringify({ counted, saved, file })}`);
+      if (counted !== "1 correction" || !saved || file !== "**Speaker A** [00:12]: Ship it on Friday.\n") {
+        console.error("\nFAIL: a correction to the transcript did not show on the post-it or did not reach the file");
+        process.exitCode = 1;
+      }
+    }
+    // Penelope, the red pen: her bubble runs clai with her own profile on copies of the meeting, and answers.
+    if (opened) {
+      await page.$eval("#penelope-pen", (el) => el.click());
+      await page.fill("#penelope-input", "hello");
+      await page.press("#penelope-input", "Enter");
+      const answered = await page
+        .waitForFunction(() => document.querySelectorAll("#penelope-log li.penelope-her").length >= 2 && !document.querySelector("#penelope").classList.contains("busy"), null, { timeout: 60_000 })
+        .then(() => true, () => false);
+      const her = await page.evaluate(() => {
+        const action = [...window.hoodModel.procs.values()].find((p) => p.action.startsWith("minutes:Ask Penelope"))?.action;
+        return {
+          said: [...document.querySelectorAll("#penelope-log li.penelope-her")].at(-1)?.textContent,
+          errors: document.querySelectorAll(".note.error").length,
+          command: action ? window.hoodModel.tree(action).map((n) => n.proc.argv[2]).join(" ") : "",
+        };
+      });
+      console.log(`Minutes, Penelope: ${JSON.stringify(her)}`);
+      if (!answered || her.errors || !her.command.includes("-profile-path /tmp/penelope/profile.json")) {
+        console.error("\nFAIL: Penelope did not answer in her bubble, or did not run clai with her profile");
+        process.exitCode = 1;
+      }
+      await page.click("#penelope-close");
     }
   }
   // Minutes' sign-out of a session that pasted a token: the app forgets the token, says the key

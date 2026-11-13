@@ -100,6 +100,7 @@ worker.onerror = (event) => term.writeln(`\x1b[31mworker failed: ${event.message
 const { bash, home } = await new Promise((ready) => {
   worker.onmessage = ({ data }) => {
     if (data.log) term.writeln(data.log);
+    if (data.fetched) document.dispatchEvent(new CustomEvent("machine-fetched", { detail: data.fetched }));
     if (data.ready) ready(data);
     if (data.output) term.write(data.output);
     if (data.events) model.add(JSON.parse(data.events));
@@ -169,11 +170,12 @@ const builtins = {
   },
 };
 
-async function run(line, tag = "terminal", extra = {}) {
+// `positional` are the line's $1, $2…, which keep newlines and are not inherited.
+async function run(line, tag = "terminal", extra = {}, positional = []) {
   const args = split(line);
   if (args.length === 0) return 0;
   if (builtins[args[0]] && !isShellLine(line)) return (await builtins[args[0]](...args.slice(1))) ?? 0;
-  if (bash) return exec("/bin/bash", ["bash", "-c", `cd -- ${quote(cwd)} || exit\n${line}`, tag], extra);
+  if (bash) return exec("/bin/bash", ["bash", "-c", `cd -- ${quote(cwd)} || exit\n${line}`, tag, ...positional], extra);
   return exec(args[0].includes("/") ? args[0] : `/bin/${args[0]}`, args);
 }
 
@@ -182,6 +184,7 @@ const encoder = new TextEncoder();
 const type = (data) => worker.postMessage({ input: encoder.encode(data) });
 const editor = new LineEditor(term, "$ ", run, type);
 // The screen's text, with the lines the terminal wrapped joined again.
+window.terminalSelection = () => term.getSelection();
 window.terminalText = () => {
   const buffer = term.buffer.active;
   let text = "";
@@ -213,11 +216,11 @@ window.writeFile = (path, text) => serially(() => exec(
   ["bash", "-c", 'd=${1%/*}; [ "$d" = "$1" ] && d=.; mkdir -p "$d" && printf %s "$2" > "$1"', "write", path, text],
 ));
 const machine = {
-  run: (line, action, extra) => serially(async () => {
+  run: (line, action, extra, positional) => serially(async () => {
     editor.busy = true;
     term.write(`\r\x1b[2K\x1b[2m# Minutes ran: ${line.replaceAll("\n", "; ")}\x1b[0m\r\n`);
     try {
-      return await run(line, action, extra);
+      return await run(line, action, extra, positional);
     } finally {
       editor.busy = false;
       term.write(editor.prompt + editor.line);
@@ -260,6 +263,23 @@ minutes = new Minutes({
   // A note about a failure points at the peek and opens its terminal.
   peek: showTab,
   anchor: peekButton,
+  terminal: {
+    write: (text) => term.write(text),
+    // Writes `text` and returns markers of its first line and of the line after it. Writes are
+    // queued, so the markers are set once the terminal has taken what came before.
+    mark: (text) => {
+      const span = { start: null, end: null };
+      term.write("", () => { span.start = term.registerMarker(0); });
+      term.write(text, () => { span.end = term.registerMarker(0); });
+      return span;
+    },
+    reveal: ({ start, end }) => {
+      if (!start || start.isDisposed) return;
+      const last = Math.max(start.line, (end && !end.isDisposed ? end.line : start.line + 1) - 1);
+      term.scrollToLine(Math.max(0, start.line - 2));
+      term.selectLines(start.line, last);
+    },
+  },
   config: window.minutesConfig ?? {},
   platform: platformOf(navigator),
 });

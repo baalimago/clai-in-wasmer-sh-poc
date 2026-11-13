@@ -173,6 +173,47 @@ export class AudioInputs {
     }
   }
 
+  // Follows the share with one context while `active()` holds: `onQuiet()` once no sample has
+  // passed `threshold` for `quietMs`, `onSound()` when sound comes back after that. Answers
+  // "done", "ended" when the share stops first, and "unshared" without one.
+  async followShare({ quietMs = 60_000, threshold = 0.01, every = 250, active = () => true, onQuiet, onSound }) {
+    const shared = this.shared;
+    if (!shared) return "unshared";
+    const context = new this.Context();
+    const source = context.createMediaStreamSource(shared.stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    let lastSound = this.now();
+    let quiet = false;
+    try {
+      await context.resume();
+      while (active()) {
+        if (this.shared !== shared) return "ended";
+        analyser.getFloatTimeDomainData(samples);
+        let peak = 0;
+        for (const v of samples) peak = Math.max(peak, Math.abs(v));
+        const now = this.now();
+        if (peak >= threshold) {
+          lastSound = now;
+          if (quiet) {
+            quiet = false;
+            onSound();
+          }
+        } else if (!quiet && now - lastSound >= quietMs) {
+          quiet = true;
+          onQuiet();
+        }
+        await this.sleep(every);
+      }
+      return "done";
+    } finally {
+      source.disconnect();
+      await context.close();
+    }
+  }
+
   // Ends the share, if there is one.
   unshare() {
     if (!this.shared) return;

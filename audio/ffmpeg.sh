@@ -109,8 +109,16 @@ stop() {
 trap stop INT TERM
 /bin/ffmpeg "${args[@]}" &
 ffmpeg=$!
-# A trapped signal ends `wait` early; wait again for ffmpeg to finish.
-while ! wait $ffmpeg; do
-  status=$?
-  kill -0 $ffmpeg 2>/dev/null || exit $status
+# A trapped signal ends `wait` early (a status above 128), so wait again for ffmpeg to finish.
+# The waits are counted: `kill -0` succeeds on a child this bash already reaped, so a loop on it
+# never ended once ffmpeg had failed or was killed, and a long loop overflows the machine's stack.
+status=0
+for _ in 1 2 3 4 5; do
+  wait $ffmpeg
+  next=$?
+  # 127: ffmpeg is reaped already, so the status before this one is its own.
+  [ $next -eq 127 ] && break
+  status=$next
+  [ $status -le 128 ] && break
 done
+exit $status

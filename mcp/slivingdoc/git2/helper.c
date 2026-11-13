@@ -9,6 +9,7 @@
  * u32 indices into this process's table. */
 #include <git2.h>
 #include <git2/sys/errors.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -133,12 +134,27 @@ static void get_oid(buf *b, git_oid *id) {
 		memset(id->id, 0, 20);
 }
 
+// Why the last read_full or write_full stopped: 0 for the end of the input, else errno.
+static int io_errno;
+
+// Reads n bytes. Returns 0, 1 at the end of the input before the first byte, or -1 on a
+// failure or an input that ends inside the n bytes. An interrupted or not-yet-ready read is
+// tried again: either one, taken for the end of the input, ended the helper without a word,
+// and slivingdoc then called the pack it was importing invalid.
 static int read_full(int fd, void *p, size_t n) {
 	unsigned char *c = p;
+	size_t want = n;
+	io_errno = 0;
 	while (n) {
 		ssize_t r = read(fd, c, n);
-		if (r <= 0)
+		if (r < 0 && (errno == EINTR || errno == EAGAIN))
+			continue;
+		if (r < 0) {
+			io_errno = errno;
 			return -1;
+		}
+		if (r == 0)
+			return n == want ? 1 : -1;
 		c += r;
 		n -= (size_t)r;
 	}
@@ -149,8 +165,12 @@ static int write_full(int fd, const void *p, size_t n) {
 	const unsigned char *c = p;
 	while (n) {
 		ssize_t w = write(fd, c, n);
-		if (w <= 0)
+		if (w < 0 && (errno == EINTR || errno == EAGAIN))
+			continue;
+		if (w <= 0) {
+			io_errno = w < 0 ? errno : EPIPE;
 			return -1;
+		}
 		c += w;
 		n -= (size_t)w;
 	}
@@ -559,13 +579,23 @@ int main(void) {
 	buf in = {0}, out = {0};
 	unsigned char len[4];
 
-	while (read_full(0, len, 4) == 0) {
+	for (;;) {
+		int head = read_full(0, len, 4);
+		// The end of the input between two requests is slivingdoc closing the helper.
+		if (head == 1)
+			return 0;
+		if (head != 0) {
+			fprintf(stderr, "slivingdoc-git2: stopped reading a request's length: %s\n",
+				io_errno ? strerror(io_errno) : "the input ended inside it");
+			return 1;
+		}
 		size_t n = (size_t)len[0] | (size_t)len[1] << 8 | (size_t)len[2] << 16 | (size_t)len[3] << 24;
 		in.len = in.pos = 0;
 		in.bad = 0;
 		need(&in, n);
 		if (read_full(0, in.data, n) != 0) {
-			fputs("slivingdoc-git2: truncated request\n", stderr);
+			fprintf(stderr, "slivingdoc-git2: stopped reading a request of %zu bytes: %s\n", n,
+				io_errno ? strerror(io_errno) : "the input ended inside it");
 			return 1;
 		}
 		in.len = n;
@@ -573,8 +603,9 @@ int main(void) {
 		git_error_clear();
 		handle_request(&in, &out);
 		unsigned char le[4] = {out.len, out.len >> 8, out.len >> 16, out.len >> 24};
-		if (write_full(1, le, 4) != 0 || write_full(1, out.data, out.len) != 0)
+		if (write_full(1, le, 4) != 0 || write_full(1, out.data, out.len) != 0) {
+			fprintf(stderr, "slivingdoc-git2: stopped writing a response of %zu bytes: %s\n", (size_t)out.len, strerror(io_errno));
 			return 1;
+		}
 	}
-	return 0;
 }

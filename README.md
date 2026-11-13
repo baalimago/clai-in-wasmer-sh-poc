@@ -21,14 +21,17 @@ in bash, that clai calls an MCP server that `uvx` starts, that its async command
 slivingdoc serves with libgit2 behind it, that clai calls the filesystem MCP server that `npx`
 starts, and that ffmpeg records Chromium's fake microphone and
 clai's meeting-transcriber profile records and transcribes with it (with clai's test models).
-It also checks that the under-the-hood view sees what a line does, and runs the Minutes app's
-Record button through to the agent's reply. `web/units.test.mjs` covers the page's logic that
+It also checks that the under-the-hood view sees what a line does, signs in with OpenRouter
+against a stand-in for its sign-in page and key exchange, runs the Minutes app's
+Record button through to the agent's reply, corrects a line of a filed transcript and saves it,
+and asks Penelope, the red pen, a question that she answers with her own profile. `web/units.test.mjs` covers the page's logic that
 needs no browser.
 
 ## Hosting it on Wasmer Edge
 
 The page needs no server of its own: the machine's HTTP goes out as the page's `fetch` calls, and
-OpenAI's API and slivingdoc's both answer a browser's CORS preflight. So it is a static site:
+OpenAI's API, OpenRouter's (its key exchange included) and slivingdoc's all answer a browser's
+CORS preflight. So it is a static site:
 
 ```sh
 make dist        # dist/: the site, 155 MB of it in dist/public
@@ -57,21 +60,32 @@ on below it: what each click started, opened and connected to, and the machine's
 Nothing the app does needs the peek; its buttons run programs on the machine directly: When
 one fails, a note hangs under the peek button with what went wrong (clai's `error` record: the
 provider's status and code, and clai's remedy when it has one; a failed tool is a warning) and a
-link that opens the peek's terminal, where every record is.
+link that opens the peek's terminal with the failure's lines selected.
 
 | Button | Runs |
 | --- | --- |
-| Start recording | `clai -json -reply-only -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook`. With `-json` every line clai prints is a record (`web/www/agent.js` reads them): the app takes the reply from the `reply` records, and each line also goes to the console. The agent picks the inputs from the meeting: the mic for a room, the mic and the default sink for a call |
+| Sign in with OpenRouter (Connect an AI provider) | nothing on the machine: OpenRouter's PKCE sign-in opens in a new tab, whose callback, `web/www/signin-callback.html`, hands the code back over a `BroadcastChannel`; the page trades it with its verifier at `POST https://openrouter.ai/api/v1/auth/keys` for a key that every run then gets as `OPENROUTER_API_KEY` |
+| Use key (Connect an AI provider) | nothing on the machine: the pasted OpenAI key reaches every run as `OPENAI_API_KEY` |
+| Disconnect (by the provider's chip) | nothing on the machine: the browser forgets the key. A key that a sign-in created stays live at its provider, so the card links to its page there (`https://openrouter.ai/keys/<sha256 of the key>`) to delete it |
+| Start recording | `clai -json -reply-only -n -profile-path cchub:baalimago/meeting-transcriber query '<notebook format>\n\nMeeting: <title>. <details>'`, in `~/notebook`. With `-n`, a hub profile that changed since this browser trusted it is refused at once instead of asked about on the console; the app then forgets the old trust, and the next Start recording trusts the new version. With `-json` every line clai prints is a record (`web/www/agent.js` reads them): the app takes the reply from the `reply` records and draws every record on the console (`web/www/records.js`): what streams is joined into running text, a tool is a line with its result under it, progress redraws one line, and an error is red with its status, code and hint. The agent picks the inputs from the meeting: the mic for a room, the mic and the default sink for a call |
 | Stop and summarize | types Enter on the console, which ends clai's `audio_record` |
-| Before you record (a checklist on a post-it) | **Allow the mic** asks for the microphone; **Share a tab with your call** asks for a screen or tab, whose audio is the sink `browser-tab` until the share stops; the page then listens to it and ticks **Sound heard** once sound comes through. Start recording stays off until all three are ticked, or the computer's audio is skipped with **record the mic only** |
+| Before you record (a checklist on a post-it) | **Allow the mic** asks for the microphone; **Share a tab with your call** asks for a screen or tab, whose audio is the sink `browser-tab` until the share stops; the page then listens to it and ticks **Sound heard** once sound comes through. Start recording waits for the mic and the share (or **record the mic only**), not for sound, so a recording can start before anyone speaks. While it records a shared tab, a minute with no sound from it (`QUIET_MS`, `AudioInputs.followShare`) puts up **Are you sharing the right tab?** on the page, in its title and as a system notification, whose permission Start recording asks for |
 | Send (answer the agent) | the same `clai`, with `-re` and the answer as the query |
-| A meeting | `cat` of its summary and transcript, rendered as markdown |
+| A meeting | `cat` of its summary and transcript: the summary rendered as markdown, the transcript one row per utterance (`web/www/proofread.js`) |
+| A line of the transcript, its speaker, its time | nothing yet: a click on the words corrects them in place, one on the speaker reassigns the line, and one on the time plays the line from the recording this browser kept. A correction is struck in red pen and written in in blue, and a post-it counts them; a word or name fixed once is offered **everywhere** it is in the transcript and the summary |
+| Penelope, the red pen at the bottom right (Ask, in her bubble) | `printf %s "$1" > /tmp/penelope/profile.json` and copies of the meeting's files as they read now, with the unsaved corrections, into `/tmp/penelope/<meeting>/`; then there `clai -json -reply-only -profile-path /tmp/penelope/profile.json query '<INPUT>'`, with `-dre` from the second question on, so the conversation goes on. The profile is `web/www/penelope.json`; the INPUT holds the meeting, the corrections and the question (`web/www/penelope.js`). The app reads the copies back and shows each line she changed, added or took out as a correction in pen, one step that **Undo these** takes back; her answer is the JSON object her prompt asks for, whose `mood` sets her face |
+| Save (on the corrections' post-it) | `printf %s "$1" > <summary>` and the same for the transcript, the corrected files reaching bash as its arguments, each correction placed by its line's text in the file as it is now; then, with slivingdoc, `slivingdoc commit -m 'Minutes: corrections to <title>'`. A commit that fails puts the files back; one that conflicts keeps the other side's lines and commits again, so no conflict block stays in the notebook. Leaving the meeting waits until the corrections are saved or dropped |
 | history | `slivingdoc log` |
 | Sign out | `slivingdoc logout`: the site revokes the key and the login is forgotten, here and on the machine |
 
 The agent is the whole transcriber: it records (its `audio_record` tool starts ffmpeg), transcribes
-with speaker labels (`gpt-4o-transcribe-diarize`, so the app asks for `OPENAI_API_KEY`), and files
-the notes. The app only puts the notebook's layout (`meetings/summaries/<start>_<slug>.md` and
+with speaker labels, and files the notes. It needs an AI provider, and `web/www/providers.js` lists
+them: how each is connected (a pasted key or an OAuth sign-in), the variable its key reaches clai
+as, and the models the agents run with on it. With OpenAI the profiles run as they are
+(`gpt-4o-transcribe-diarize`); with OpenRouter the agent gets `-cm 'or:openai/gpt-5.6-luna' -am
+'or:elevenlabs/scribe-v2+diarize'` (a clai built from its `feat-openrouter-transcribe-models`
+branch or later; `+diarize` asks for speaker labels) and Penelope `-cm 'or:openai/gpt-6.1-sol'`, which override the profiles'
+models. The first connected provider in the list is the one used. The app only puts the notebook's layout (`meetings/summaries/<start>_<slug>.md` and
 `meetings/transcripts/...`) at the top of the query, so the profile stays as it is. Without a
 slivingdoc token the notes stay in `~/notebook` in the tab; with one (from slivingdoc.dev, under
 Connect slivingdoc), every run gets `SLIVINGDOC_TOKEN`, so the agent's slivingdoc server writes to
@@ -96,7 +110,7 @@ click or terminal line it belongs to. The view (`web/www/hood.js`) shows the las
 and its process tree (each process labelled: the agent, an MCP server, libgit2, the recording ffmpeg), the event log, the connections by host and the files written, with the
 bytes moved through redirections and inherited descriptors counted for the file or connection
 behind them. The app's progress steps come from the same events: the ffmpeg with an input is the
-recording, a connection to api.openai.com after it the transcription, one from slivingdoc the
+recording, a connection to the AI provider (api.openai.com, openrouter.ai) after it the transcription, one from slivingdoc the
 save.
 
 ## Prerequisites
@@ -248,7 +262,7 @@ version. `cchub:clai/researcher` and `cchub:baalimago/meeting-transcriber` start
 | --- | --- | --- |
 | ddg | `uvx duckduckgo-mcp-server==0.7.0` | Runs the Go port: `search`, `fetch_content` and `expand_link` give the Python server's output, and a live search answers from the page |
 | slivingdoc | `npx -y slivingdoc@1.3.1 serve ...` | Runs slivingdoc 1.3.1 itself, with libgit2 1.9.6 in a helper process (below) |
-| Filesystem | `npx -y @modelcontextprotocol/server-filesystem ./` | Runs the Go port: the tools give the Node server's text, diffs included, and refuse paths, symlinks too, outside the directories given. It takes its directories only from its arguments, not from MCP Roots |
+| Filesystem | `npx -y @modelcontextprotocol/server-filesystem /tmp/ .` | Runs the Go port: the tools give the Node server's text, diffs included, and refuse paths, symlinks too, outside the directories given. It takes its directories only from its arguments, not from MCP Roots |
 
 The Go port has no threads, so a read that blocks in the kernel would stop every goroutine. The
 port polls a descriptor outside the netpoller (a terminal, a pipe) until it is readable, sleeping
@@ -328,6 +342,11 @@ clai asks you to trust the profile first (or `clai profiles trust cchub:baalimag
 starts slivingdoc and the filesystem server (on the directory you run it in) for the notes, and
 Enter stops the recording. The recording and the files clai
 writes are in the tab's memory only.
+
+The profile's source is `web/profiles/meeting-transcriber.json`. A change to it goes to the Hub
+as the next version with `clai profiles publish web/profiles/meeting-transcriber.json -name
+meeting-transcriber -note '<what changed>'`, after `clai cloud login`; each browser then trusts
+the new version once.
 
 ### slivingdoc and libgit2
 

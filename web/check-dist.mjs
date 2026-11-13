@@ -19,7 +19,10 @@ const TYPES = {
   ".css": "text/css",
   ".json": "application/json",
   ".wasm": "application/wasm",
+  ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
 };
 
 // The headers static-web-server adds to every file: the `**` rule's table in its settings.

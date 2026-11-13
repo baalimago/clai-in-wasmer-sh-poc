@@ -406,6 +406,15 @@ func libgit2WritePack(repo *repoHandle, objects []git.OID, w io.Writer) (int, er
 
 func libgit2ImportPack(odb *odbHandle, data []byte) error {
 	if _, err := call(opImportPack, new(encoder).u32(odb.id).bytes(data)); err != nil {
+		// slivingdoc reports a refused pack as PACK_INVALID and prints none of the cause, so
+		// libgit2's own words go to stderr here: its return code, error class and message, or
+		// that the helper itself broke (rc 0, class 0).
+		var h helperError
+		if errors.As(err, &h) {
+			fmt.Fprintf(os.Stderr, "%s: import pack of %d bytes failed: rc=%d class=%d: %s\n", helperProgram, len(data), h.rc, h.class, h.message)
+		} else {
+			fmt.Fprintf(os.Stderr, "%s: import pack of %d bytes failed: %v\n", helperProgram, len(data), err)
+		}
 		return nativeError("import pack")
 	}
 	return nil

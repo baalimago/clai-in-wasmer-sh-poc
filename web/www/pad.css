@@ -167,6 +167,9 @@ body, .top { background: var(--pad-paper); }
 .loader-ink path.tick { stroke: var(--pad-accent); stroke-width: 2.8; }
 .loader-ink path.doodle { stroke: #5b5d63; stroke-width: 1.7; opacity: .85; }
 .loader-ink path.gone { opacity: 0; }
+/* What the machine fetched while it boots, scribbled on the rules below the steps. */
+.loading .fetched { position: absolute; white-space: nowrap; font: 21px/var(--rule) var(--hand); color: #5b5d63; transition: opacity .4s; }
+.loading .fetched.gone { opacity: 0; }
 
 /* pen.js: the pens that write, over the whole page. */
 .pens { position: fixed; inset: 0; z-index: 50; overflow: hidden; pointer-events: none; }
@@ -175,7 +178,7 @@ body, .top { background: var(--pad-paper); }
 .pen.lifted > g { filter: drop-shadow(18px 26px 8px rgba(40, 30, 10, .2)); }
 
 @media (prefers-reduced-motion: no-preference) {
-  .erasing li, .erasing .loader-ink { animation: rub-out .5s ease-in forwards; }
+  .erasing li, .erasing .loader-ink, .erasing .fetched { animation: rub-out .5s ease-in forwards; }
   .erasing li:nth-of-type(2) { animation-delay: .1s; }
   .erasing li:nth-of-type(3) { animation-delay: .2s; }
   .erasing .loader-ink { animation-delay: .25s; }
@@ -219,7 +222,7 @@ body, .top { background: var(--pad-paper); }
 @keyframes stamp { from { opacity: 0; transform: scale(1.35) rotate(-3deg); } }
 
 /* The checklist before a recording: a green post-it smacked onto the pad. Each line still to do
-   is a link in red pencil that asks the browser; Start recording waits until all are ticked. */
+   is a link in red pencil that asks the browser; Start recording waits for the mic and the share. */
 .precheck {
   position: relative; box-sizing: border-box; align-self: flex-start; width: min(520px, 100%); margin: 8px 0 var(--rule); padding: 20px 26px 22px;
   font: 22px/var(--rule) var(--hand); color: #2f3b24; transform: rotate(-1deg);
@@ -238,6 +241,14 @@ body, .top { background: var(--pad-paper); }
 .precheck .tick:disabled { opacity: 1; }
 .precheck .tick.alarm { color: var(--pad-accent); }
 .precheck .hint { margin: 6px 0 0; font-size: 19px; line-height: 26px; color: #4a5a3a; }
+/* A recorded share that stays silent: an orange post-it asking about it. */
+.rec-quiet {
+  box-sizing: border-box; align-self: flex-start; width: min(560px, 100%); margin: 0; padding: 16px 22px;
+  font: 21px/28px var(--hand); color: #4a2e10; transform: rotate(.6deg);
+  background: linear-gradient(170deg, #ffe0b0, #ffcf8a 60%, #ffc070);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 8px 12px 14px -8px rgba(80, 40, 0, .45);
+}
+.rec-quiet strong { display: block; font-size: 26px; color: var(--pad-accent); }
 .precheck .row { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 6px; }
 .content .precheck .inline { height: auto; padding: 0; border: 0; background: none; font: 19px var(--hand); color: #4a5a3a; text-decoration: underline; cursor: pointer; }
 .precheck .level { height: 14px; margin: 4px 0; border: 2px solid #3d4a2e; border-radius: 4px 9px 5px 8px / 8px 4px 9px 5px; overflow: hidden; }
@@ -253,3 +264,166 @@ body, .top { background: var(--pad-paper); }
   70% { transform: rotate(-.6deg) scale(1.01); }
   100% { transform: rotate(-1deg); }
 }
+
+/* Proofreading (proofread.js): red pen strikes the agent's pencil, blue pen writes the fix. */
+.proof-hint { margin: 0 0 var(--rule); font: 19px/var(--rule) var(--hand); color: #75705f; }
+.utt, .utt-added { --hang: 74px; position: relative; padding-left: var(--hang); text-indent: calc(-1 * var(--hang)); }
+.utt { cursor: text; }
+.utt-added ins { text-indent: 0; }
+#transcript.untimed :is(.utt, .utt-added) { padding-left: 0; text-indent: 0; }
+.utt:focus-visible { outline: 2px dashed rgba(192, 57, 43, .55); outline-offset: 1px; }
+.content .utt-time, .content .utt-who {
+  display: inline; height: auto; padding: 0; border: 0; background: none; text-indent: 0; line-height: var(--rule);
+}
+.content .utt-time { display: inline-block; width: var(--hang); font: 17px/var(--rule) var(--hand); color: #8a8576; text-align: left; cursor: default; }
+#transcript.playable .utt-time { cursor: pointer; }
+#transcript.playable .utt-time::before { content: "▸ "; color: var(--pad-accent); }
+#transcript.playable .utt-time:hover { color: var(--pad-accent); }
+.content .utt-who { font: 700 22px/var(--rule) var(--hand); color: var(--pad-ink); cursor: pointer; }
+.utt-added .utt-time { display: inline-block; width: var(--hang); font-size: 17px; }
+.utt-added .utt-who { font-weight: 700; }
+.utt-who:hover { text-decoration: underline wavy 1.5px var(--pad-accent); text-underline-offset: 4px; }
+/* The line playing, run over with a highlighter. */
+.utt.playing { background: linear-gradient(transparent 18%, rgba(255, 140, 190, .35) 18% 88%, transparent 88%) 0 0 / 100% var(--rule); }
+.prose del { color: #8a8576; text-decoration: line-through 2px rgba(192, 57, 43, .85); }
+.prose ins { color: #1f3a8a; text-decoration: none; }
+.prose del + ins { margin-left: .25em; }
+.utt.removed .utt-time, .utt.removed .utt-who { opacity: .5; }
+.content .utt-edit {
+  display: block; width: 100%; height: var(--rule); margin: 0; padding: 0 6px; text-indent: 0; overflow: hidden;
+  font: 22px/var(--rule) var(--hand); color: #1f3a8a; background: rgba(255, 255, 255, .6);
+}
+/* On a phone the words wrap under the time and the speaker, at the pad's full width. */
+@media (max-width: 600px) {
+  .utt, .utt-added { padding-left: 0; text-indent: 0; }
+  .content .utt-time { width: auto; margin-right: 10px; }
+  .who-menu { left: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .settling del { animation: rub-out .5s ease-in forwards; }
+  .settling ins { transition: color .5s; color: inherit; }
+}
+
+/* Who said a line: a small pink post-it of the meeting's speakers. */
+.who-menu {
+  position: absolute; z-index: 6; left: var(--hang); top: var(--rule); display: flex; flex-direction: column; min-width: 190px;
+  padding: 8px 16px 10px; text-indent: 0; transform: rotate(-1deg); font: 22px/var(--rule) var(--hand);
+  background: linear-gradient(170deg, #ffdcec, #ffcbe2 60%, #f8bcd6); box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 8px 12px 14px -8px rgba(80, 20, 50, .4);
+}
+.content .who-menu button {
+  height: auto; padding: 0; border: 0; background: none; text-align: left; font: 22px/var(--rule) var(--hand); color: var(--pad-accent);
+  text-decoration: underline 1.5px; text-underline-offset: 4px; cursor: pointer;
+}
+.content .who-menu button:hover, .content .who-menu button:focus-visible { text-decoration-style: wavy; outline: 0; }
+.content .who-menu input { height: var(--rule); background: rgba(255, 255, 255, .6); }
+
+/* The unsaved corrections: a post-it stuck to the bottom of the view. */
+.fixes {
+  position: sticky; bottom: 18px; z-index: 7; align-self: flex-end; box-sizing: border-box; width: min(340px, 100%); margin: 0;
+  padding: 12px 22px 14px; font: 22px/var(--rule) var(--hand); color: #4a2338; transform: rotate(-1deg);
+  background: linear-gradient(170deg, #ffdcec, #ffcbe2 60%, #f8bcd6);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 8px 12px 14px -8px rgba(80, 20, 50, .45);
+}
+.fixes::before { content: ""; position: absolute; inset: 0 0 auto; height: 34px; background: linear-gradient(rgba(120, 40, 80, .08), transparent); pointer-events: none; }
+.content .fixes h2 { margin: 0; font: 700 28px/var(--rule) var(--hand); color: #4a2338; }
+.fixes .hint { margin: 0; font-size: 19px; line-height: 26px; color: #6b3a55; }
+.fixes .hint:empty { display: none; }
+.fixes .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 8px; }
+.content .fixes .inline { height: auto; padding: 0; border: 0; background: none; font: 19px var(--hand); color: #6b3a55; text-decoration: underline; cursor: pointer; }
+.fix-offer { margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1.5px dashed rgba(120, 40, 80, .3); }
+.offer-what { margin: 0; font: 700 24px/var(--rule) var(--hand); color: #1f3a8a; }
+@media (prefers-reduced-motion: no-preference) {
+  .fixes:not([hidden]) { animation: note-smack .38s cubic-bezier(.2, .9, .3, 1) backwards; }
+  .fixes.nudge { animation: note-wiggle .45s ease-in-out; }
+}
+@keyframes note-wiggle {
+  25% { transform: rotate(-2.5deg) translateX(-4px); }
+  50% { transform: rotate(3deg) translateX(4px); }
+  75% { transform: rotate(-.5deg); }
+}
+
+/* Penelope, the red pen (penelope.js): she stands at the bottom right of the desk and talks in a bubble. */
+.penelope { position: fixed; right: 20px; bottom: 6px; z-index: 40; font: 21px/27px var(--hand); color: var(--pad-ink); }
+.penelope-pen { display: block; padding: 0; border: 0; background: none; cursor: pointer; transform-origin: 50% 96%; filter: drop-shadow(6px 8px 4px rgba(40, 30, 10, .28)); }
+.penelope-pen svg { display: block; }
+.penelope-pen:focus-visible { outline: 2px dashed rgba(192, 57, 43, .7); outline-offset: 4px; border-radius: 8px; }
+.penelope-eyes { transform-box: view-box; transform-origin: 24px 79px; }
+.penelope-pupil, .penelope-brow { transition: transform .25s ease; }
+.penelope-brow { transform-box: fill-box; transform-origin: center; }
+.penelope-bow { transform-box: fill-box; transform-origin: 50% 70%; }
+.penelope.open .penelope-pupil { transform: translate(-1.4px, -.8px); }
+.penelope.busy .penelope-pupil { transform: translate(-1.6px, 1.8px); }
+.penelope.mood-unsure .penelope-brow-left { transform: translateY(-2.2px) rotate(-10deg); }
+.penelope.mood-sorry .penelope-brow-left { transform: rotate(16deg); }
+.penelope.mood-sorry .penelope-brow-right { transform: rotate(-16deg); }
+
+.penelope-bubble {
+  position: fixed; right: 78px; bottom: 58px; display: flex; flex-direction: column; box-sizing: border-box;
+  width: min(380px, calc(100vw - 100px)); max-height: min(70vh, 560px); padding: 10px 16px 12px;
+  background: #fffdf6; border: 1.5px solid #3d3f44; border-radius: 16px 12px 18px 14px / 14px 18px 12px 16px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .05), 10px 16px 28px -10px rgba(60, 45, 15, .45);
+}
+.penelope-bubble::after {
+  content: ""; position: absolute; right: -10px; bottom: 34px; width: 18px; height: 18px; background: #fffdf6;
+  border-top: 1.5px solid #3d3f44; border-right: 1.5px solid #3d3f44; transform: rotate(45deg) skew(14deg, 14deg);
+}
+.penelope-head { display: flex; align-items: baseline; gap: 8px; padding-bottom: 4px; border-bottom: 1.5px solid rgba(192, 57, 43, .45); }
+.penelope-head strong { font: 700 26px/32px var(--hand); color: var(--pad-accent); }
+.penelope-role { margin-right: auto; font: 18px var(--hand); color: #8a8576; }
+.penelope-close { padding: 0 4px; border: 0; background: none; color: #8a8576; font: 15px var(--sans); }
+.penelope-log { display: flex; flex-direction: column; gap: 10px; flex: 1 1 auto; min-height: 56px; margin: 8px 0 0; padding: 0 4px 0 0; overflow: auto; list-style: none; }
+.penelope-log li { max-width: 92%; }
+.penelope-log p, .penelope-log ul, .penelope-log ol { margin: 0 0 6px; }
+.penelope-log li > :last-child { margin-bottom: 0; }
+.penelope-log strong { color: var(--pad-accent); }
+.penelope-log code { font-size: 13px; }
+.penelope-her { align-self: flex-start; color: #4a4c52; }
+.penelope-you { align-self: flex-end; color: #1f3a8a; text-align: right; }
+.penelope-step, .penelope-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 4px 0 0; font-size: 18px; color: #6b6658; }
+.penelope-link {
+  padding: 0; border: 0; background: none; text-align: left; font: 700 19px/26px var(--hand); color: var(--pad-accent);
+  text-decoration: underline 1.5px; text-underline-offset: 4px; cursor: pointer;
+}
+.penelope-link:hover { text-decoration-style: wavy; }
+.penelope-link:disabled { color: #aaa49a; text-decoration: line-through; cursor: default; opacity: 1; }
+.penelope-doing { margin: 8px 0 0; font: 19px/26px var(--hand); color: #6b6658; }
+.penelope-ideas { display: flex; flex-direction: column; align-items: flex-start; margin: 8px 0 0; }
+.penelope-ideas:empty { display: none; }
+.penelope-form { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1.5px dashed rgba(61, 63, 68, .25); }
+.penelope-form textarea {
+  flex: 1; min-height: 32px; max-height: 128px; padding: 2px 6px; border: 0; border-bottom: 1.5px solid #93bde4; border-radius: 0;
+  background: transparent; font: 21px/28px var(--hand); color: #1f3a8a; outline: 0; resize: none; overflow-y: hidden;
+}
+.penelope-ask {
+  min-height: 34px; padding: 0 14px; border: 0; border-radius: 3px 8px 4px 9px / 9px 4px 8px 3px;
+  background: #3b3b3b; color: #fff; font: 700 20px var(--hand);
+}
+/* The corrections' post-it makes room for the bubble. */
+.fixes { transition: margin-right .3s ease; }
+body.penelope-open .fixes { margin-right: 400px; }
+@media (max-width: 900px) { body.penelope-open .fixes { margin-right: 0; } }
+@media (max-width: 600px) {
+  .penelope { right: 10px; bottom: 2px; }
+  .penelope-pen svg { width: 36px; height: 129px; }
+  .penelope-bubble { left: 8px; right: 8px; bottom: 140px; width: auto; }
+  .penelope-bubble::after { right: 22px; bottom: -11px; transform: rotate(135deg) skew(14deg, 14deg); }
+}
+/* She leans toward her bubble to write, never off the edge of the screen. */
+@media (prefers-reduced-motion: no-preference) {
+  .penelope-pen { animation: penelope-sway 6s ease-in-out infinite; }
+  .penelope-eyes { animation: penelope-blink 6.5s infinite; }
+  .penelope-bow { animation: penelope-bow 6s ease-in-out infinite; }
+  .penelope.arriving .penelope-pen { animation: penelope-arrive .7s cubic-bezier(.2, 1.3, .4, 1) backwards, penelope-sway 6s ease-in-out .7s infinite; }
+  .penelope.open .penelope-pen { animation: none; transform: rotate(-7deg); transition: transform .3s ease; }
+  .penelope.busy .penelope-pen { animation: penelope-write .3s ease-in-out infinite alternate; }
+  .penelope-bubble:not([hidden]) { animation: penelope-pop .2s ease-out; }
+  .penelope-doing::after { content: ""; animation: penelope-dots 1.2s steps(4) infinite; }
+}
+@media (prefers-reduced-motion: reduce) { .penelope-doing::after { content: "…"; } }
+@keyframes penelope-sway { 0%, 100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
+@keyframes penelope-blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+@keyframes penelope-bow { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes penelope-write { from { transform: rotate(-12deg) translateX(-2px); } to { transform: rotate(-18deg) translate(-4px, -2px); } }
+@keyframes penelope-arrive { from { transform: translateY(190px) rotate(-12deg); } }
+@keyframes penelope-pop { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+@keyframes penelope-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }

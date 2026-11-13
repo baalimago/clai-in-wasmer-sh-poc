@@ -114,7 +114,11 @@ export function problemOf(run, status) {
       code: cause.provider_code ?? null,
     };
   }
-  if (status === 0) return null;
+  // A run that ended without a word but printed lines that are no record died on the way: a
+  // panic, or a program that never started.
+  const died = status === 0 && run.stray.length > 0 && run.text === "";
+  if (status === 0 && !died) return null;
+  if (died) return { level: "error", title: "The agent stopped unexpectedly", detail: brief(run.stray.at(-1)), hint: null, code: null };
   const said = run.stray.at(-1) ?? run.warnings.at(-1)?.message ?? run.failures.at(-1)?.error ?? "";
   return { level: "error", title: `The agent stopped with exit status ${status}`, detail: brief(said), hint: null, code: null };
 }

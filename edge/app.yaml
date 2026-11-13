@@ -2,3 +2,11 @@
 kind: wasmer.io/App.v0
 name: clai-minutes
 package: .
+# Edge keeps the site's files at its edge and answers from there before a request reaches the
+# app (beta, the whole app or nothing). Every file qualifies: settings/config.toml sends each with
+# Cache-Control: no-cache, which Edge stores and revalidates, a Content-Length, and no cookie. A deploy starts a new cache,
+# so a new version is never served from the old one; `wasmer app cdn purge` clears it by hand.
+# https://docs.wasmer.io/edge/learn/cdn-cache
+capabilities:
+  cdn_cache:
+    enabled: true

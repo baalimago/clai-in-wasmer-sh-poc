@@ -48,6 +48,7 @@ dist: build
 	cp -R edge/. $(DIST)/
 	cp -R $(WWW)/. $(DIST)/public/
 	cd $(WEB)/node_modules && cp -R $(NODE_PACKAGES) $(DIST)/public/node_modules/
+	node $(WEB)/compress-dist.mjs $(DIST)/public
 	@du -sh $(DIST)/public
 
 # The dist as Edge serves it, in headless Chromium (web/check-dist.mjs). DIST_URL=... checks a
@@ -148,8 +149,21 @@ $(FFMPEG_SRC)/configure:
 	tar xJf $(FFMPEG_SRC).tar.xz -C $(FFMPEG_SRC) --strip-components 1
 	rm $(FFMPEG_SRC).tar.xz
 
-$(FFMPEG_BUILD)/ffmpeg: $(WASI_SDK) $(FFMPEG_SRC)/configure audio/ffmpeg/build.sh audio/ffmpeg/wasi_compat.h
-	audio/ffmpeg/build.sh $(WASI_SDK) $(FFMPEG_SRC) $(FFMPEG_BUILD)
+# LAME, the MP3 encoder ffmpeg is built with (libmp3lame): clai encodes the pieces of a long
+# recording as MP3 before it sends them to be transcribed.
+LAME_VERSION := 3.100
+LAME_SHA256 := ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+LAME_SRC := $(CURDIR)/.tools/lame-$(LAME_VERSION)
+
+$(LAME_SRC)/configure:
+	mkdir -p $(LAME_SRC)
+	curl -fsSL https://downloads.sourceforge.net/project/lame/lame/$(LAME_VERSION)/lame-$(LAME_VERSION).tar.gz -o $(LAME_SRC).tar.gz
+	echo "$(LAME_SHA256)  $(LAME_SRC).tar.gz" | $(SHA256) -c -
+	tar xzf $(LAME_SRC).tar.gz -C $(LAME_SRC) --strip-components 1
+	rm $(LAME_SRC).tar.gz
+
+$(FFMPEG_BUILD)/ffmpeg: $(WASI_SDK) $(FFMPEG_SRC)/configure $(LAME_SRC)/configure audio/ffmpeg/build.sh audio/ffmpeg/wasi_compat.h
+	audio/ffmpeg/build.sh $(WASI_SDK) $(FFMPEG_SRC) $(FFMPEG_BUILD) $(LAME_SRC)
 
 $(WWW)/bin/ffmpeg.wasm $(WWW)/bin/ffprobe.wasm: $(FFMPEG_BUILD)/ffmpeg
 	@mkdir -p $(@D)

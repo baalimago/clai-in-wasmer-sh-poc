@@ -5,17 +5,25 @@ import { test } from "node:test";
 
 import { Machine, describe, label, mask } from "./www/hood.js";
 import { notePath, renderMarkdown } from "./www/markdown.js";
-import { STEPS, stepsFor, stepsOver } from "./www/arrival.js";
+import { STEPS, fetchedLine, resourceLabel, stepsFor, stepsOver } from "./www/arrival.js";
 import { groupLines, writingMs } from "./www/pen.js";
 import { wrapWords } from "./www/doodles.js";
 import { isShellLine } from "./www/shell.js";
 import { AudioInputs, audioLimits, platformOf, withOsVersion } from "./www/audio.js";
 import { AgentRun, brief, problemOf, toolProblem } from "./www/agent.js";
+import { RecordPrinter } from "./www/records.js";
 import {
-  DEFAULTS, accountOf, precheck, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
+  Fixes, align, clock, diffMarks, marksToHtml, offerWhere, parseUtterance, partsOf, resolveConflicts, singleChange, transcriptRows,
+} from "./www/proofread.js";
+import { activityOf, correctionsOf, penelopeQuery, parseSay } from "./www/penelope.js";
+import {
+  DEFAULTS, SILENCE_SECONDS, accountOf, untrustedProfile, precheck, notebookFormat, describeFile, groupMeetings, isRemote, meetingMeta, parseApproval, parseList, parseNote,
   parseSpaces, profilePage, signoutResult, splitMessage, summariesIn, unknownSpeakers,
-  withoutHeading,
+  withFlags, withoutHeading,
 } from "./www/minutes.js";
+import {
+  OPENROUTER_AUDIO, PROVIDERS, activeProvider, authorizeUrl, callbackMessage, challengeOf, exchangeCode, pkce, providerById, providerFlags, sha256Hex,
+} from "./www/providers.js";
 
 const exec = (pid, ppid, path, argv, t = 1) => ({ t, type: "exec", pid, ppid, path, argv });
 
@@ -169,6 +177,71 @@ test("a failed exit without an error record still is a problem, with the last th
   assert.deepEqual(problemOf(run, 127), {
     level: "error", title: "The agent stopped with exit status 127", detail: "bash: clai: command not found", hint: null, code: null,
   });
+});
+
+test("a run that printed no record and no reply died, even with a clean status", () => {
+  const run = new AgentRun();
+  run.take("panic: runtime error: index out of range");
+  run.take("goroutine 1 [running]:");
+  assert.equal(problemOf(run, 0).title, "The agent stopped unexpectedly");
+  assert.equal(problemOf(run, 0).detail, "goroutine 1 [running]:");
+  // A stray line beside a reply is not a failure.
+  run.take('{"type":"reply","text":"All filed."}');
+  assert.equal(problemOf(run, 0), null);
+});
+
+// What a printer writes for records, with the terminal's colours taken out.
+const drawn = (records) => {
+  const printer = new RecordPrinter();
+  const text = records.map((r) => (typeof r === "string" ? printer.raw(r) : printer.print(r))).join("") + printer.end();
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
+};
+
+test("the terminal joins what streams into running text, and a reply is written once", () => {
+  assert.equal(drawn([
+    { type: "reasoning_delta", text: "The user" },
+    { type: "reasoning_delta", text: " wants notes." },
+    { type: "reply_delta", text: "I will " },
+    { type: "reply_delta", text: "record\nnow." },
+    { type: "reply", text: "I will record\nnow." },
+    { type: "reply", text: "Whole." },
+  ]), "thinking The user wants notes.\r\nI will record\r\nnow.\r\nWhole.\r\n");
+});
+
+test("the terminal shows a tool as a line and its result under it", () => {
+  assert.equal(drawn([
+    { type: "tool_call", name: "audio_sources", inputs: {} },
+    { type: "tool_call", name: "audio_record", inputs: { dir: "/tmp/recordings", mic: true, devices: ["browser-mic"] } },
+    { type: "tool_result", name: "audio_sources", ok: true, output: "system_audio: available\nmic one\nmic two\n" },
+    { type: "tool_result", name: "fs", ok: false, output: "ERROR: Access denied", error: "Access denied" },
+  ]), "▸ audio_sources\r\n▸ audio_record dir=/tmp/recordings mic=true devices=[\"browser-mic\"]\r\n" +
+    "  ✓ audio_sources: system_audio: available (+2 more lines)\r\n  ✗ fs: Access denied\r\n");
+});
+
+test("the terminal redraws one line for a progress, and ends it when it is done", () => {
+  const erase = "\r\x1b[2K";
+  const printer = new RecordPrinter();
+  const text = [
+    { type: "progress", title: "audio_record", state: "start", detail: "/tmp/rec" },
+    { type: "progress", title: "audio_record", state: "update", detail: "silent" },
+    { type: "progress", title: "audio_record", state: "update", detail: "sound" },
+    { type: "progress", title: "audio_record", state: "done", detail: "saved" },
+    { type: "reply", text: "Filed." },
+  ].map((r) => printer.print(r)).join("").replace(/\x1b\[[0-9;]*m/g, "");
+  assert.equal(text, `… audio_record start /tmp/rec${erase}… audio_record update silent${erase}… audio_record update sound` +
+    `${erase}… audio_record done saved\r\nFiled.\r\n`);
+});
+
+test("the terminal shows an error with its status, code and hint, and other lines as they are", () => {
+  const message = "authentication failed, status: 401";
+  assert.equal(drawn([
+    { type: "reply_delta", text: "Let me" },
+    { type: "error", message, causes: [{ message, status: 401, provider_code: "invalid_api_key", remedies: ["Set OPENAI_API_KEY"] }] },
+    { type: "diagnostic", level: "warn", subsystem: "clai", message: "shutting down gracefully", facts: { signal: "interrupt" } },
+    { type: "prompt", kind: "calibrate", text: "silence levels may not match", choices: ["a"] },
+    "bash: clai: command not found",
+  ]), "Let me\r\nerror: authentication failed, status: 401\r\n  status 401 · invalid_api_key\r\n  hint: Set OPENAI_API_KEY\r\n" +
+    "warn [clai] shutting down gracefully signal=interrupt\r\n? silence levels may not match [a]\r\nbash: clai: command not found\r\n");
 });
 
 test("a tool that failed is a warning, and a missing program is named as one", () => {
@@ -334,6 +407,9 @@ test("a transcript's speakers without a name, each with a line they said", () =>
     { label: "Speaker B", sample: "Fine." },
   ]);
   assert.deepEqual(unknownSpeakers("**Ada:** Hi.\n**Grace:** Hello."), []);
+  assert.deepEqual(unknownSpeakers("[00:00:14.550 --> 00:00:21.550] Speaker B: I think when you do it."), [
+    { label: "Speaker B", sample: "I think when you do it." },
+  ]);
 });
 
 test("a note's own Summary or Transcript heading goes, the card has one", () => {
@@ -348,6 +424,20 @@ test("the pad writes each loading phase once, in order, and nothing after ready"
     [STEPS.booting, STEPS.checking, STEPS.fetching]);
   assert.deepEqual(stepsFor(["booting", "listing", "ready"]), [STEPS.booting, STEPS.listing]);
   assert.deepEqual(stepsFor(["ready"]), []);
+});
+
+test("the pad names a fetched file by its program or package, and a line of them by size", () => {
+  assert.equal(resourceLabel("./clai.wasm.gz"), "clai");
+  assert.equal(resourceLabel("./bin/slivingdoc-git2.wasm"), "slivingdoc-git2");
+  assert.equal(resourceLabel("./packages/wasmer-coreutils-1.0.27.webc.gz"), "coreutils");
+  assert.equal(resourceLabel("./packages/wasmer-bash-1.0.25.webc"), "bash");
+  assert.equal(resourceLabel("./pkg/clai_web_bg.wasm.gz"), "the kernel");
+  assert.equal(resourceLabel("./bin/play.sh"), "play.sh");
+  assert.equal(fetchedLine([{ url: "./clai.wasm.gz", bytes: 7_680_050 }]), "clai · 7.7 MB");
+  assert.equal(fetchedLine([
+    { url: "./packages/wasmer-grep-3.12.0.webc", bytes: 120_000 },
+    { url: "./packages/wasmer-sed-4.9.0.webc", bytes: 90_000 },
+  ]), "grep, sed · 210 KB");
 });
 
 test("the boxes are ticked only once Minutes is ready and the pen has doodled", () => {
@@ -490,14 +580,15 @@ test("without a microphone, the shared input is still listed", async () => {
 
 const ticks = (check) => check.items.map((i) => `${i.done ? "x" : " "} ${i.text}${i.action ? " >" : ""}`);
 
-test("the checklist asks for the mic, then a share, then sound, and only then may a recording start", () => {
+test("the checklist asks for the mic and a share; sound is only listened for, so a recording may start before anyone speaks", () => {
   const none = precheck({ mic: null, computer: null }, "Share a tab", {});
   assert.deepEqual(ticks(none), ["  Allow the mic >", "  Share a tab with your call >", "  Hear the call's sound"]);
   assert.equal(none.ready, false);
   const shared = { mic: "Mic", computer: { label: "Shared tab", via: "share" } };
   assert.deepEqual(ticks(precheck(shared, "Share a tab", {})), ["x Mic: Mic", "x Computer audio: Shared tab", "  Listening for sound…"]);
-  assert.equal(precheck(shared, "Share a tab", {}).ready, false);
-  assert.equal(precheck(shared, "Share a tab", { silent: true }).items[2].text, "No sound yet. Unmute the call or press play.");
+  assert.ok(precheck(shared, "Share a tab", {}).ready);
+  assert.equal(precheck(shared, "Share a tab", { silent: true }).items[2].text, "No sound yet. You can still start.");
+  assert.ok(precheck(shared, "Share a tab", { silent: true }).ready);
   const heard = precheck(shared, "Share a tab", { heard: true });
   assert.deepEqual(ticks(heard).at(-1), "x Sound heard");
   assert.ok(heard.ready);
@@ -612,4 +703,300 @@ test("nothing shared, or a share that ends while listening, is said so", async (
   const { audio } = await listening([]);
   const heard = audio.hearShare({ ms: 2000, onLevel: () => audio.unshare() });
   assert.equal(await heard, "ended");
+});
+
+test("a followed share says when it has been quiet for quietMs, and when sound comes back", async () => {
+  const { audio, state } = await listening([0.2, 0, 0, 0, 0, 0, 0, 0.3, 0]);
+  const events = [];
+  let looks = 0;
+  const end = await audio.followShare({
+    quietMs: 1000, every: 250, active: () => ++looks <= 10,
+    onQuiet: () => events.push(`quiet@${audio.now()}`), onSound: () => events.push(`sound@${audio.now()}`),
+  });
+  assert.equal(end, "done");
+  assert.deepEqual(events, ["quiet@1000", "sound@1750"]);
+  assert.ok(state.closed, "the following context is closed");
+});
+
+test("following nothing shared, or a share that ends, is said so", async () => {
+  const { Context } = hearing([]);
+  const bare = new AudioInputs({ send: () => {}, notice: () => {}, media: fakeMedia([]), Context, ...fakeClock() });
+  assert.equal(await bare.followShare({ onQuiet() {}, onSound() {} }), "unshared");
+  const { audio } = await listening([]);
+  let looks = 0;
+  const end = await audio.followShare({ every: 250, active: () => ++looks < 3 || (audio.unshare(), true), onQuiet() {}, onSound() {} });
+  assert.equal(end, "ended");
+});
+
+test("a transcript line is an utterance whatever shape the agent wrote it in", () => {
+  const say = (line) => {
+    const u = parseUtterance(line);
+    return u && [u.name, u.words, u.start, u.end];
+  };
+  assert.deepEqual(say("[00:00:04.300 --> 00:00:09.250] Tesi: Lawrence, share the screen."), ["Tesi", "Lawrence, share the screen.", 4.3, 9.25]);
+  assert.deepEqual(say("**Speaker A** [00:12]: Ship it."), ["Speaker A", "Ship it.", 12, null]);
+  assert.deepEqual(say("- **Speaker B**: ok"), ["Speaker B", "ok", null, null]);
+  assert.deepEqual(say("**Ada:** at 10:30 we meet"), ["Ada", "at 10:30 we meet", null, null]);
+  assert.deepEqual(say("1:02:05 Grace: yes"), ["Grace", "yes", 3725, null]);
+  assert.equal(say("- see https://example.com"), null);
+  // Rebuilt from its parts, a corrected line keeps its time and markup.
+  const u = parseUtterance("**Speaker A** [00:12]: Ship it.");
+  assert.equal(u.prefix + "Ada" + u.mid + "Ship it today.", "**Ada** [00:12]: Ship it today.");
+  assert.deepEqual(partsOf("**Ada** [00:12]: Ship it today.", u), { name: "Ada", words: "Ship it today." });
+  assert.equal(clock(4.3), "0:04");
+  assert.equal(clock(3725), "1:02:05");
+});
+
+test("the transcript's rows skip front matter and the metadata above it, and keep a speaker who speaks once", () => {
+  const text = "---\ntitle: Sync\n---\n# Sync transcript\n\n- **Duration:** 38\n- **Source:** mic\n\nAda: one\nGrace: two\nAda: three\n";
+  const rows = transcriptRows(text).map(({ n, u }) => `${n}:${u ? u.name : "-"}`);
+  assert.deepEqual(rows, ["3:-", "4:-", "5:-", "6:-", "7:-", "8:Ada", "9:Grace", "10:Ada", "11:-"]);
+});
+
+test("a correction shows what was struck and what was written in", () => {
+  const marks = (a, b) => marksToHtml(diffMarks(a, b));
+  assert.equal(marks("Lawrence, you have to", "Lorentz, you have to"), "<del>Lawrence</del><ins>Lorentz</ins>, you have to");
+  assert.equal(marks("we use wasm air now", "we use Wasmer now"), "we use <del>wasm air</del><ins>Wasmer</ins> now");
+  assert.equal(marks("same", "same"), "same");
+});
+
+test("a fix of one word or name is offered everywhere, not a fix of case or of several places", () => {
+  assert.deepEqual(singleChange("Lawrence, you have to", "Lorentz, you have to"), { from: "Lawrence", to: "Lorentz" });
+  assert.deepEqual(singleChange("Lawrence's turn", "Lorentz's turn"), { from: "Lawrence", to: "Lorentz" });
+  assert.deepEqual(singleChange("we use wasm air now", "we use Wasmer now"), { from: "wasm air", to: "Wasmer" });
+  assert.equal(singleChange("may we", "May we"), null);
+  assert.equal(singleChange("a b c", "x b y"), null);
+  assert.equal(singleChange("at 12 sharp", "at 13 sharp"), null);
+  assert.equal(singleChange("and the plan", "and a plan"), null);
+  assert.deepEqual(singleChange("ask Bob now", "ask Rob now"), { from: "Bob", to: "Rob" });
+  assert.equal(singleChange("ok", "ok"), null);
+});
+
+test("corrections are undone a step at a time, and a line set back is no correction", () => {
+  const fixes = new Fixes({ transcript: "Ada: one\nGrace: two", summary: "" });
+  fixes.change([{ file: "transcript", n: 0, text: "Ada: uno" }]);
+  fixes.change([{ file: "transcript", n: 1, text: null }]);
+  assert.equal(fixes.count, 2);
+  assert.equal(fixes.text("transcript", 1), null);
+  fixes.change([{ file: "transcript", n: 0, text: "Ada: one" }]);
+  assert.equal(fixes.count, 1);
+  fixes.undo();
+  assert.equal(fixes.text("transcript", 0), "Ada: uno");
+  fixes.undo();
+  fixes.undo();
+  assert.equal(fixes.count, 0);
+  assert.equal(fixes.undo(), false);
+});
+
+test("fixing a name everywhere reaches the transcript and the summary, but not their front matter", () => {
+  const fixes = new Fixes({
+    transcript: "---\ntitle: With Lawrence\n---\nLawrence: hi\nAda: hi lawrence, and Lawrence's dog\nAda: Lawrenceville",
+    summary: "---\ntitle: With Lawrence\n---\n- Lawrence decides\n",
+  });
+  const places = fixes.places("Lawrence");
+  assert.deepEqual([places.transcript.count, places.summary.count], [3, 1]);
+  assert.equal(offerWhere(places), "In 4 more places: 3 in the transcript, 1 in the summary.");
+  assert.equal(offerWhere({ transcript: { count: 1 }, summary: { count: 0 } }), "In 1 more place in the transcript.");
+  assert.equal(fixes.everywhere("Lawrence", "Lorentz"), 3);
+  assert.equal(fixes.text("transcript", 3), "Lorentz: hi");
+  assert.equal(fixes.text("transcript", 4), "Ada: hi Lorentz, and Lorentz's dog");
+  assert.equal(fixes.text("transcript", 5), "Ada: Lawrenceville");
+  assert.equal(fixes.text("summary", 3), "- Lorentz decides");
+  assert.equal(fixes.text("transcript", 1), "title: With Lawrence");
+  // A $ in the new word is written as it is.
+  fixes.undo();
+  fixes.everywhere("Lawrence", "$1");
+  assert.equal(fixes.text("summary", 3), "- $1 decides");
+});
+
+test("saving puts each correction on its line as the notebook has the file now", () => {
+  const filed = "Ada: one\nGrace: two\nAda: three";
+  const fixes = new Fixes({ transcript: filed, summary: "" });
+  fixes.change([{ file: "transcript", n: 0, text: "Ada: uno" }, { file: "transcript", n: 1, text: null }, { file: "transcript", n: 2, text: "Ada: tres" }]);
+  assert.deepEqual(fixes.rebase("transcript", filed), { text: "Ada: uno\nAda: tres", lost: 0 });
+  // Lines added elsewhere move nothing; a line changed elsewhere loses its correction.
+  assert.deepEqual(fixes.rebase("transcript", "Bo: new\nAda: one\nGrace: two\nAda: 3"), { text: "Bo: new\nAda: uno\nAda: 3", lost: 1 });
+  // A save tried again finds its corrections already made.
+  assert.deepEqual(fixes.rebase("transcript", "Ada: uno\nAda: tres"), { text: "Ada: uno\nAda: tres", lost: 0 });
+});
+
+test("a conflict slivingdoc wrote into a file keeps the other side's text", () => {
+  const text = "a\n<<<<<<< local\nmine\n=======\ntheirs\nand more\n>>>>>>> remote\nb\n<<<<<<< local\nunclosed";
+  assert.deepEqual(resolveConflicts(text), { text: "a\ntheirs\nand more\nb\n<<<<<<< local\nunclosed", blocks: 1 });
+});
+
+test("an agent's edited copy comes back as corrections to the lines it changed, and as lines it added", () => {
+  const filed = "---\ntitle: Sync\n---\nAda: one\nGrace: two wasm air\nAda: three\n";
+  const fixes = new Fixes({ transcript: filed, summary: "- Decide\n" });
+  fixes.change([{ file: "transcript", n: 3, text: "Ada: uno" }]);
+  // The copy holds the user's correction; the agent fixed a word, split a line, and took one out.
+  assert.equal(fixes.result("transcript"), "---\ntitle: Sync\n---\nAda: uno\nGrace: two wasm air\nAda: three\n");
+  const copy = "---\ntitle: Sync\n---\nAda: uno\nGrace: two Wasmer\nAda: three, and\nGrace: four\n";
+  const changes = fixes.adopt("transcript", copy);
+  assert.deepEqual(changes, [
+    { file: "transcript", n: 4, text: "Grace: two Wasmer" },
+    { file: "transcript", n: 5, text: "Ada: three, and" },
+    { file: "transcript", after: 5, lines: ["Grace: four"] },
+  ]);
+  fixes.change([...changes, ...fixes.adopt("summary", "- Decide\n- Ship on Friday\n")]);
+  assert.equal(fixes.result("transcript"), copy);
+  assert.equal(fixes.count, 5);
+  assert.equal(fixes.marked("summary"), "- Decide\n- \uE002Ship on Friday\uE003\n");
+  // The agent's step undoes as one, leaving the user's own correction.
+  fixes.undo();
+  assert.equal(fixes.count, 1);
+  assert.deepEqual(fixes.adopt("transcript", fixes.result("transcript")), []);
+  // A line taken out is struck, its list marker kept.
+  const summary = new Fixes({ summary: "- Keep\n- Drop me\n" });
+  summary.change(summary.adopt("summary", "- Keep\n"));
+  assert.equal(summary.marked("summary"), "- Keep\n- \uE000Drop me\uE001\n");
+});
+
+test("lines an agent added are saved after their line as the notebook has it, once", () => {
+  const filed = "a\nb\nc";
+  const fixes = new Fixes({ transcript: filed });
+  fixes.change(fixes.adopt("transcript", "top\na\nb\nb2\nc"));
+  assert.deepEqual(fixes.rebase("transcript", filed), { text: "top\na\nb\nb2\nc", lost: 0 });
+  assert.deepEqual(fixes.rebase("transcript", "x\na\nb\nc"), { text: "top\nx\na\nb\nb2\nc", lost: 0 });
+  assert.deepEqual(fixes.rebase("transcript", "top\na\nb\nb2\nc"), { text: "top\na\nb\nb2\nc", lost: 0 });
+  // Its line gone from the notebook, an added line has nowhere to go.
+  assert.deepEqual(fixes.rebase("transcript", "top\na\nc"), { text: "top\na\nc", lost: 1 });
+  assert.deepEqual(align(["a", "b"], ["a", "x", "b"]).map((op) => op.type), ["same", "ins", "same"]);
+});
+
+test("fixing a name everywhere reaches lines an agent added too", () => {
+  const fixes = new Fixes({ transcript: "Ada: hi Lawrence", summary: "" });
+  fixes.change([{ file: "transcript", after: 0, lines: ["Lawrence: hello"] }]);
+  assert.equal(fixes.places("Lawrence").transcript.count, 2);
+  fixes.everywhere("Lawrence", "Lorentz");
+  assert.equal(fixes.result("transcript"), "Ada: hi Lorentz\nLorentz: hello");
+});
+
+test("Penelope's turn is the INPUT of her prompt, with the user's unsaved corrections in it", () => {
+  const fixes = new Fixes({ transcript: "Ada: hi Lawrence\nGrace: bye", summary: "- Ship\n" });
+  fixes.change([{ file: "transcript", n: 0, text: "Ada: hi Lorentz" }, { file: "transcript", n: 1, text: null }, { file: "summary", after: 0, lines: ["- Test"] }]);
+  const corrections = correctionsOf(fixes);
+  assert.deepEqual(corrections, [
+    "transcript.md: “Ada: hi Lawrence” → “Ada: hi Lorentz”",
+    "transcript.md: took out “Grace: bye”",
+    "summary.md: added “- Test”",
+  ]);
+  assert.deepEqual(correctionsOf(fixes, 1), [corrections[0], "and 2 more"]);
+  assert.equal(
+    penelopeQuery({ title: "Sync", transcriptLines: 2, summaryLines: 3, corrections: corrections.slice(0, 1), request: "Fix the names" }),
+    "INPUT\nMeeting: Sync\ntranscript.md: 2 lines. summary.md: 3 lines.\n" +
+      "The user's unsaved corrections, already in the copies:\n- transcript.md: “Ada: hi Lawrence” → “Ada: hi Lorentz”\nRequest: Fix the names",
+  );
+  assert.throws(() => penelopeQuery({ title: "Sync", transcriptLines: 2, summaryLines: 3, corrections: [] }), /request is missing/);
+});
+
+test("Penelope's answer is the JSON object her prompt asks for, and what she said when she wrote none", () => {
+  assert.deepEqual(parseSay('Done.\n{"say": "Fixed **Lorentz** at 0:04.", "mood": "glad"}'), { say: "Fixed **Lorentz** at 0:04.", mood: "glad" });
+  assert.deepEqual(parseSay('```json\n{"say": "Who is Speaker A?", "mood": "unsure"}\n```'), { say: "Who is Speaker A?", mood: "unsure" });
+  assert.deepEqual(parseSay('{"say": "Hm {odd}", "mood": "grumpy"}'), { say: "Hm {odd}", mood: "glad" });
+  assert.deepEqual(parseSay("done after tool for: hello"), { say: "done after tool for: hello", mood: "glad" });
+  assert.deepEqual(parseSay(""), { say: "…", mood: "glad" });
+});
+
+test("what Penelope is doing reads from the tool she calls", () => {
+  assert.equal(activityOf({ name: "rg", inputs: { pattern: "Lawrence", path: "." } }), "Looking for “Lawrence”");
+  assert.equal(activityOf({ name: "rows_between", inputs: { file_path: "summary.md", start_line: 3, end_line: 9 } }), "Reading lines 3 to 9 of the summary");
+  assert.equal(activityOf({ name: "sed", inputs: { file_path: "transcript.md" } }), "Correcting the transcript");
+  assert.equal(activityOf({ name: "write_file", inputs: { file_path: "summary.md" } }), "Rewriting the summary");
+  assert.equal(activityOf({ name: "date" }), "Using date");
+});
+
+test("the agent is told to record through five minutes of silence, signed in or not", () => {
+  assert.equal(SILENCE_SECONDS, 300);
+  for (const connected of [true, false]) assert.match(notebookFormat(connected), /silence_timeout_seconds set to 300:/);
+});
+
+test("a hub profile that changed since it was trusted is named, so the app asks to trust it again", () => {
+  const changed = "profile cchub:baalimago/meeting-transcriber: cchub:baalimago/meeting-transcriber changed to a version (sha256 1a2b…9c8d) " +
+    "you have not trusted, and there is no terminal to ask in. Not running it.\n  Read it:  https://www.clai.chat/hub/baalimago/meeting-transcriber/";
+  assert.equal(untrustedProfile([{ message: "something else" }, { message: changed }]), "cchub:baalimago/meeting-transcriber");
+  assert.equal(untrustedProfile([{ message: "failed to create text querier: no such model" }]), null);
+  assert.equal(untrustedProfile([]), null);
+});
+
+// RFC 7636 appendix B: these 32 octets make this verifier, whose S256 challenge is this.
+const RFC_OCTETS = [116, 24, 223, 180, 151, 153, 224, 37, 79, 250, 96, 125, 216, 173, 187, 186, 22, 212, 37, 77, 105, 214, 191, 240, 91, 88, 5, 88, 83, 132, 141, 121];
+const RFC_VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+const RFC_CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+
+test("a provider sign-in's PKCE pair is RFC 7636's S256, and its state is fresh", async () => {
+  assert.equal(await challengeOf(RFC_VERIFIER), RFC_CHALLENGE);
+  const { verifier, challenge, state } = await pkce((n) => new Uint8Array(n === 32 ? RFC_OCTETS : Array(n).fill(255)));
+  assert.equal(verifier, RFC_VERIFIER);
+  assert.equal(challenge, RFC_CHALLENGE);
+  assert.equal(state, "_____________________w");
+  const a = await pkce();
+  const b = await pkce();
+  assert.match(a.verifier, /^[\w-]{43}$/);
+  assert.notEqual(a.verifier, b.verifier);
+  assert.notEqual(a.state, b.state);
+});
+
+test("OpenRouter's sign-in page gets the callback, the challenge, S256, a key label and the state", () => {
+  const url = new URL(authorizeUrl(providerById("openrouter"), { callback: "https://minutes.example/signin-callback.html", challenge: RFC_CHALLENGE, state: "s1" }));
+  assert.equal(url.origin + url.pathname, "https://openrouter.ai/auth");
+  assert.deepEqual(Object.fromEntries(url.searchParams), {
+    callback_url: "https://minutes.example/signin-callback.html",
+    code_challenge: RFC_CHALLENGE,
+    code_challenge_method: "S256",
+    key_label: "Minutes",
+    state: "s1",
+  });
+});
+
+const respond = (status, body) => async (url, init) => {
+  respond.last = { url, init };
+  return new Response(typeof body === "string" ? body : JSON.stringify(body), { status });
+};
+
+test("the callback's code is traded for the key with the verifier", async () => {
+  const openrouter = providerById("openrouter");
+  assert.equal(await exchangeCode(openrouter, { code: "c1", verifier: RFC_VERIFIER }, respond(200, { key: "sk-or-v1-abc" })), "sk-or-v1-abc");
+  assert.equal(respond.last.url, "https://openrouter.ai/api/v1/auth/keys");
+  assert.equal(respond.last.init.method, "POST");
+  assert.deepEqual(JSON.parse(respond.last.init.body), { code: "c1", code_verifier: RFC_VERIFIER, code_challenge_method: "S256" });
+});
+
+test("a refused or keyless exchange throws with what the provider said", async () => {
+  const openrouter = providerById("openrouter");
+  const refused = respond(403, { error: { message: "Invalid code or code_verifier", code: 403 } });
+  await assert.rejects(exchangeCode(openrouter, { code: "c", verifier: "v" }, refused), /OpenRouter refused the sign-in \(403: Invalid code or code_verifier\)/);
+  await assert.rejects(exchangeCode(openrouter, { code: "c", verifier: "v" }, respond(502, "bad gateway")), /\(502: bad gateway\)/);
+  await assert.rejects(exchangeCode(openrouter, { code: "c", verifier: "v" }, respond(200, { id: "x" })), /OpenRouter sent no key/);
+  await assert.rejects(exchangeCode(openrouter, { code: "c", verifier: "v" }, respond(200, "<html>")), /OpenRouter sent no key/);
+});
+
+test("the callback page reads an approval's code and state, or a denial's error", () => {
+  assert.deepEqual(callbackMessage("?code=c1&state=s1"), { code: "c1", state: "s1", error: null });
+  assert.deepEqual(callbackMessage("?error=access_denied&error_description=User+denied"), { code: null, state: null, error: "User denied" });
+  assert.deepEqual(callbackMessage(""), { code: null, state: null, error: null });
+});
+
+test("the first connected provider is the one the agents run with", () => {
+  assert.equal(activeProvider(new Map()), null);
+  assert.equal(activeProvider(new Map([["OPENROUTER_API_KEY", "k"]])).id, "openrouter");
+  assert.equal(activeProvider(new Map([["OPENROUTER_API_KEY", "k"], ["OPENAI_API_KEY", "k"]])).id, "openai");
+  assert.equal(new Set(PROVIDERS.map((p) => p.stored)).size, PROVIDERS.length);
+  assert.equal(providerById("openai").stored, "minutes.openai-key");
+});
+
+test("OpenRouter runs the agents on or: models; OpenAI keeps the profiles' own", () => {
+  assert.equal(providerFlags(providerById("openai"), "agent"), "");
+  assert.equal(providerFlags(null, "agent"), "");
+  assert.equal(providerFlags(providerById("openrouter"), "agent"), `-cm 'or:openai/gpt-5.6-luna' -am '${OPENROUTER_AUDIO}'`);
+  assert.equal(providerFlags(providerById("openrouter"), "penelope"), "-cm 'or:openai/gpt-6.1-sol'");
+  assert.equal(withFlags("", ""), "");
+  assert.equal(withFlags("-cm 'a'", ""), "-cm 'a' ");
+  assert.equal(withFlags("-cm 'a'", "-cm mock_test"), "-cm 'a' -cm mock_test ");
+});
+
+test("a signed-in OpenRouter key is deleted on its page, found by the key's SHA-256", async () => {
+  assert.equal(await sha256Hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  assert.equal(await providerById("openrouter").manage("abc"), "https://openrouter.ai/keys/ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  assert.equal(providerById("openai").manage, undefined);
 });

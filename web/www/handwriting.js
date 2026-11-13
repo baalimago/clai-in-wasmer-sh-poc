@@ -49,6 +49,8 @@ export class Handwriting {
   changed(records) {
     const touched = new Set();
     for (const record of records) {
+      // What the user corrected (proofread.js) shows as it is.
+      if ((record.target.closest ? record.target : record.target.parentElement)?.closest("[data-written]")) continue;
       const el = this.targets().find((t) => t.contains(record.target));
       if (el) touched.add(el);
     }

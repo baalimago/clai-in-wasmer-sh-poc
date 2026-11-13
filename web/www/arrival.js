@@ -27,6 +27,23 @@ export function stepsFor(phases) {
   return lines;
 }
 
+// What the pad calls a file the machine fetched: its program or package, without version and
+// extension, and "the kernel" for the machine's own module.
+export function resourceLabel(url) {
+  const file = url.split("/").at(-1).replace(/\.gz$/, "");
+  if (/^clai_web(_bg)?\.wasm$/.test(file)) return "the kernel";
+  const pkg = /^wasmer-(.+?)-\d+(?:\.\d+)*\.webc$/.exec(file);
+  if (pkg) return pkg[1];
+  return file.replace(/\.(wasm|webc|crt|json)$/, "");
+}
+
+// A line for files the machine fetched: their names and how much came over the wire.
+export function fetchedLine(files) {
+  const bytes = files.reduce((sum, f) => sum + f.bytes, 0);
+  const size = bytes < 1e6 ? `${Math.max(1, Math.round(bytes / 1e3))} KB` : `${(bytes / 1e6).toFixed(1)} MB`;
+  return `${files.map((f) => resourceLabel(f.url)).join(", ")} · ${size}`;
+}
+
 // How many of `count` boxed steps the pen ticks off: none until Minutes is ready and the pen
 // has doodled at least once, then all of them, one by one.
 export const stepsOver = (count, ready, doodled) => (ready && doodled ? count : 0);
@@ -34,7 +51,7 @@ export const stepsOver = (count, ready, doodled) => (ready && doodled ? count : 
 // What a pen writes in when it shows. The sticky note is put down whole instead, and a
 // meeting's notes are handwriting.js's.
 const WRITTEN = [
-  ".setup > .card:not(#notebook-card) > :is(label, p)", ".setup > .card:not(#notebook-card) .row > *",
+  ".setup > .card:not(#notebook-card) > :is(h2, label, p)", ".setup > .card:not(#notebook-card) .row > *",
   "[data-view=record] > h1", "#record-form > *", "#empty", ".notebook > *", "#status",
   "#meetings .sidehead", "#meetings .meeting > *",
 ].join(", ");
@@ -60,6 +77,12 @@ export class Arrival {
     this.list = doc.querySelector("#loading");
     this.phases = [];
     this.waiting = null;
+    // Files the machine fetched that the pen has not written yet (main.js passes them on).
+    this.fetched = [];
+    // The certificates and the wrapper scripts are a few KB each, not worth naming.
+    doc.addEventListener?.("machine-fetched", ({ detail }) => {
+      if (!/\.(crt|sh)$/.test(detail.url)) this.fetched.push(detail);
+    });
     this.calm = pens.calm;
     // ?slowload=SECONDS keeps the loading on the pad at least that long, to watch it.
     const hold = Number(new URLSearchParams(doc.location?.search ?? "").get("slowload")) || 0;
@@ -133,6 +156,12 @@ export class Arrival {
         continue;
       }
       if (this.ready && this.doodled > 0) break;
+      // What the machine fetched meanwhile, a few names to a line, in place of a doodle.
+      if (this.fetched.length) {
+        await this.noteFetched(this.fetched.splice(0, 3));
+        this.doodled += 1;
+        continue;
+      }
       await this.doodle();
       this.doodled += 1;
       await sleep(rand(300, 700) * this.pen.pace);
@@ -173,13 +202,57 @@ export class Arrival {
     return path;
   }
 
-  // One doodle on the pad below the steps (and those to come), rubbing out the oldest when there is no room.
-  async doodle() {
+  // Where doodles and notes go: below the steps, and those to come.
+  area() {
     const content = this.list.parentElement;
-    const area = {
+    return {
       x: 40, y: (MAX_STEPS + 1) * RULE,
       w: content.clientWidth - 110 - 56 - 80, h: content.clientHeight - 3 * RULE - (MAX_STEPS + 2) * RULE,
     };
+  }
+
+  overlaps(r) {
+    return this.doodles.some((d) => r.x < d.x + d.w + 16 && d.x < r.x + r.w + 16 && r.y < d.y + d.h + 12 && d.y < r.y + r.h + 12);
+  }
+
+  // Rubs out the older half of what is drawn below the steps.
+  async clearOldest() {
+    const old = this.doodles.splice(0, Math.max(1, Math.ceil(this.doodles.length / 2)));
+    for (const d of old) d.path.classList.add("gone");
+    await sleep(400);
+    for (const d of old) d.path.remove();
+  }
+
+  // Files the machine fetched, written quickly on the first free rule below the steps.
+  async noteFetched(files) {
+    const text = fetchedLine(files);
+    const el = this.doc.createElement("span");
+    el.className = "ink fetched";
+    el.textContent = text;
+    el.style.clipPath = "polygon(0 0, 0 0, 0 0)";
+    this.list.append(el);
+    const area = this.area();
+    const w = el.offsetWidth;
+    let spot = null;
+    for (let k = 0; !spot && (k + 1) * RULE <= area.h; k++) {
+      const r = { x: area.x + rand(0, 10), y: area.y + k * RULE, w, h: RULE };
+      if (r.x + w <= this.list.clientWidth - 8 && !this.overlaps(r)) spot = r;
+    }
+    if (!spot) {
+      el.remove();
+      this.fetched.unshift(...files);
+      return this.clearOldest();
+    }
+    el.style.left = `${spot.x.toFixed(1)}px`;
+    el.style.top = `${spot.y}px`;
+    this.doodles.push({ ...spot, path: el });
+    await this.pens.writeWith(this.pen, el, undefined, { ms: text.length * 14, fly: false });
+    el.style.clipPath = "";
+  }
+
+  // One doodle on the pad below the steps (and those to come), rubbing out the oldest when there is no room.
+  async doodle() {
+    const area = this.area();
     const shape = SHAPES[pick(Object.keys(SHAPES))];
     const scale = rand(0.8, 1.2);
     const w = shape.w * scale;
@@ -187,15 +260,9 @@ export class Arrival {
     let spot = null;
     for (let i = 0; i < 30 && !spot && area.w > w && area.h > h; i++) {
       const r = { x: area.x + rand(0, area.w - w), y: area.y + rand(0, area.h - h), w, h };
-      if (!this.doodles.some((d) => r.x < d.x + d.w + 16 && d.x < r.x + r.w + 16 && r.y < d.y + d.h + 12 && d.y < r.y + r.h + 12)) spot = r;
+      if (!this.overlaps(r)) spot = r;
     }
-    if (!spot) {
-      const old = this.doodles.splice(0, Math.max(1, Math.ceil(this.doodles.length / 2)));
-      for (const d of old) d.path.classList.add("gone");
-      await sleep(400);
-      for (const d of old) d.path.remove();
-      return;
-    }
+    if (!spot) return this.clearOldest();
     const path = this.doc.createElementNS(SVG, "path");
     path.setAttribute("d", shape.d(shape.w, shape.h));
     path.setAttribute("transform", `translate(${spot.x.toFixed(1)} ${spot.y.toFixed(1)}) scale(${scale.toFixed(2)})`);

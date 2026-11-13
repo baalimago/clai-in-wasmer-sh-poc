@@ -19,6 +19,9 @@ const TYPES = {
   ".webc": "application/octet-stream",
   ".woff2": "font/woff2",
   ".svg": "image/svg+xml",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
 };
 
 function resolve(pathname) {

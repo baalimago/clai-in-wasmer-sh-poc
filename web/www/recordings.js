@@ -32,4 +32,8 @@ export class Recordings {
   get(key) {
     return this.request("readonly", (store) => store.get(key));
   }
+
+  remove(key) {
+    return this.request("readwrite", (store) => store.delete(key));
+  }
 }

@@ -2,6 +2,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minutes on WASIX v2</title>
+<link rel="icon" href="./favicon.ico" sizes="48x48">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="./style.css">
 <link rel="stylesheet" href="./pad.css">
@@ -14,8 +17,8 @@
   <div class="chips">
     <span class="chip" id="machine-chip">wasmer.sh · WASIX v2 kernel: booting</span>
     <span class="chip" id="notebook-chip">slivingdoc: not connected</span>
-    <span class="chip" id="key-chip">OpenAI key: not set</span>
-    <button id="change-key" class="inline" hidden>Change key</button>
+    <span class="chip" id="key-chip">AI provider: not connected</span>
+    <button id="change-key" class="inline" hidden>Disconnect</button>
     <button id="peek" class="peek" aria-expanded="false" aria-controls="hood">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
       Peek under the hood
@@ -46,15 +49,27 @@
     <div class="content">
       <ol id="loading" class="loading" aria-label="Opening the notebook" aria-live="polite"></ol>
       <div id="setup" class="setup">
-        <form id="key-form" class="card">
-          <label for="key-input"><strong>OpenAI API key</strong></label>
-          <p class="quiet">The agent transcribes with speaker labels and writes the summary with it. This browser keeps it for this site, and it reaches only the agent, as <code>OPENAI_API_KEY</code>.</p>
-          <p class="quiet">Create a key just for this on <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI's API keys page</a>: a restricted key in a project with a small budget, which you delete when you are done, is the safest.</p>
+        <section id="provider-card" class="card">
+          <h2>Connect an AI provider</h2>
+          <p class="quiet">The agent transcribes with speaker labels and writes the summary with it, billed to your account. This browser keeps the key for this site, and it reaches only the agent.</p>
           <div class="row">
-            <input id="key-input" type="password" autocomplete="off" placeholder="sk-…">
-            <button class="primary">Use key</button>
+            <button id="signin-openrouter" data-provider="openrouter" type="button" class="primary">Sign in with OpenRouter</button>
           </div>
-        </form>
+          <p id="provider-wait" class="quiet" role="status" hidden>
+            <span id="provider-wait-text"></span>
+            <a id="provider-link" target="_blank" rel="noopener">Open the sign-in page</a>
+          </p>
+          <form id="key-form" data-provider="openai" class="row">
+            <label for="key-input" class="sr-only">OpenAI API key</label>
+            <input id="key-input" type="password" autocomplete="off" placeholder="or paste an OpenAI API key, sk-…">
+            <button class="secondary">Use key</button>
+          </form>
+          <p class="quiet">For OpenAI, create a key just for this on <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI's API keys page</a>: a restricted key in a project with a small budget, which you delete when you are done, is the safest.</p>
+          <p id="provider-said" class="quiet" hidden>
+            <span id="provider-said-text"></span>
+            <a id="provider-manage" target="_blank" rel="noopener" hidden>Delete it on OpenRouter</a>
+          </p>
+        </section>
         <form id="space-form" class="card space" hidden>
           <label for="space"><strong>Choose a slivingdoc space</strong></label>
           <p class="quiet">Your login reaches more than one space and has no default yet. Minutes keeps its meetings in the one you pick, and this browser remembers it.</p>
@@ -132,6 +147,11 @@
           <span id="rec-inputs" class="quiet rec-inputs">Mic</span>
         </div>
 
+        <p id="rec-quiet" class="rec-quiet" role="alert" hidden>
+          <strong>Are you sharing the right tab?</strong>
+          Nothing has come from it for a minute. On the call's tab, use your browser's <em>Share this tab instead</em>, or check that the call isn't muted. The recording goes on.
+        </p>
+
         <ol id="stages" class="stages" hidden></ol>
 
         <form id="speakers" class="card speakers" hidden>
@@ -144,6 +164,7 @@
         <div id="agent" class="card" hidden>
           <h2>The agent says</h2>
           <p id="agent-text" class="prose"></p>
+          <p id="retry-note" class="quiet" hidden>The recording is kept in this browser, below. <button id="retry" type="button" class="secondary">Try again with this recording</button></p>
           <form id="reply-form" class="row">
             <label for="reply" class="sr-only">Answer the agent</label>
             <input id="reply" placeholder="Answer the agent, such as who Speaker A is">
@@ -158,11 +179,32 @@
           </article>
           <article class="card transcript">
             <h2>Transcript</h2>
+            <p id="proof-hint" class="quiet proof-hint" hidden></p>
+            <p id="proof-keys" class="sr-only">Enter corrects the line, Space plays it, S changes who said it, the arrows move between lines.</p>
             <div id="transcript" class="prose"></div>
           </article>
         </div>
 
+        <aside id="fixes" class="fixes" aria-labelledby="fixes-count" hidden>
+          <div id="fix-offer" class="fix-offer" hidden>
+            <p id="offer-what" class="offer-what"></p>
+            <p id="offer-where" class="hint"></p>
+            <div class="row">
+              <button id="offer-all" type="button" class="secondary">Fix them all</button>
+              <button id="offer-one" type="button" class="inline">Just this one</button>
+            </div>
+          </div>
+          <h2 id="fixes-count">1 correction</h2>
+          <p id="fixes-said" class="hint" role="status"></p>
+          <div class="row">
+            <button id="fixes-save" type="button" class="primary">Save</button>
+            <button id="fixes-undo" type="button" class="inline">Undo the last</button>
+            <button id="fixes-drop" type="button" class="inline">Drop them</button>
+          </div>
+        </aside>
+
         <audio id="recording" class="recording" controls hidden></audio>
+        <a id="recording-download" class="download" download hidden>Download the recording</a>
         <div id="saved" class="quiet" hidden>
           Saved to the notebook as <code id="saved-path"></code><span class="history-sep"> · </span><button id="history" class="inline">history</button>
         </div>
@@ -216,6 +258,57 @@
   </section>
 </main>
 <div id="notes" class="notes" aria-label="Problems" hidden></div>
+<aside id="penelope" class="penelope" aria-label="Penelope, the red pen" hidden>
+  <section id="penelope-bubble" class="penelope-bubble" role="dialog" aria-labelledby="penelope-name" hidden>
+    <header class="penelope-head">
+      <strong id="penelope-name">Penelope</strong>
+      <span class="penelope-role">the red pen that checks these notes</span>
+      <button id="penelope-close" type="button" class="penelope-close" aria-label="Put Penelope away">✕</button>
+    </header>
+    <ol id="penelope-log" class="penelope-log" aria-live="polite"></ol>
+    <p id="penelope-doing" class="penelope-doing" role="status" hidden></p>
+    <div id="penelope-ideas" class="penelope-ideas"></div>
+    <form id="penelope-form" class="penelope-form">
+      <label for="penelope-input" class="sr-only">Ask Penelope</label>
+      <textarea id="penelope-input" rows="1" placeholder="Ask Penelope to fix something"></textarea>
+      <button id="penelope-ask" class="penelope-ask">Ask</button>
+    </form>
+  </section>
+  <button id="penelope-pen" type="button" class="penelope-pen" aria-label="Talk to Penelope, the red pen" aria-expanded="false" aria-controls="penelope-bubble">
+    <svg width="48" height="172" viewBox="0 0 48 172" aria-hidden="true">
+      <g class="penelope-body">
+        <rect x="12" y="14" width="24" height="42" rx="7" fill="#a8352c"/>
+        <rect x="14.5" y="17" width="4.5" height="36" rx="2.2" fill="#c9554a"/>
+        <rect x="13" y="56" width="22" height="80" fill="#e2574c"/>
+        <rect x="13" y="56" width="6" height="80" fill="#f07c70"/>
+        <rect x="29" y="56" width="6" height="80" fill="#b83b31"/>
+        <rect x="12" y="53" width="24" height="5" rx="2" fill="#8e2a1f"/>
+        <path d="M33 17h3.5a1.5 1.5 0 0 1 1.5 1.5v42a3 3 0 0 1-3 3h-.5a1.5 1.5 0 0 1-1.5-1.5z" fill="#d6dae2" stroke="#9aa0ab" stroke-width=".8"/>
+        <rect x="14" y="136" width="20" height="10" rx="2" fill="#7a2620"/>
+        <path d="M15 146h18l-7 17h-4z" fill="#d6dae2"/>
+        <circle cx="24" cy="164.6" r="1.8" fill="#c0392b"/>
+        <g class="penelope-bow">
+          <path d="M24 13C15 2 4 4 7 13c2 7 10 6 17 0z" fill="#ff8fb8" stroke="#d94f86" stroke-width="1.2"/>
+          <path d="M24 13c9-11 20-9 17 0-2 7-10 6-17 0z" fill="#ff8fb8" stroke="#d94f86" stroke-width="1.2"/>
+          <path d="M22 15l-4 9 4-2zM26 15l4 9-4-2z" fill="#ff8fb8" stroke="#d94f86" stroke-width="1"/>
+          <rect x="20.5" y="9.5" width="7" height="7" rx="2.5" fill="#f06a9f" stroke="#d94f86" stroke-width="1"/>
+        </g>
+        <circle cx="15.8" cy="88" r="2.6" fill="#ffb3c7" opacity=".75"/>
+        <circle cx="32.2" cy="88" r="2.6" fill="#ffb3c7" opacity=".75"/>
+        <g class="penelope-eyes">
+          <ellipse cx="19.2" cy="79" rx="3.9" ry="4.9" fill="#fff"/>
+          <ellipse cx="28.8" cy="79" rx="3.9" ry="4.9" fill="#fff"/>
+          <circle class="penelope-pupil" cx="19.7" cy="80" r="2" fill="#2a1210"/>
+          <circle class="penelope-pupil" cx="29.3" cy="80" r="2" fill="#2a1210"/>
+          <path d="M15.6 76.2l-2.3-1.2M16.4 74.6l-1.6-2M18.2 73.6l-.5-2.3M32.4 76.2l2.3-1.2M31.6 74.6l1.6-2M29.8 73.6l.5-2.3" stroke="#2a1210" stroke-width="1.1" stroke-linecap="round"/>
+        </g>
+        <path class="penelope-brow penelope-brow-left" d="M16 68.8q3.2-1.8 6.4 0" fill="none" stroke="#5a1d17" stroke-width="1.3" stroke-linecap="round"/>
+        <path class="penelope-brow penelope-brow-right" d="M25.6 68.8q3.2-1.8 6.4 0" fill="none" stroke="#5a1d17" stroke-width="1.3" stroke-linecap="round"/>
+        <path id="penelope-mouth" d="M19.5 91.5 Q24 96.5 28.5 91.5" fill="none" stroke="#4a1a14" stroke-width="1.6" stroke-linecap="round"/>
+      </g>
+    </svg>
+  </button>
+</aside>
 <div class="players"></div>
 <script type="module" src="./main.js"></script>
 <script type="module" src="./handwriting.js"></script>

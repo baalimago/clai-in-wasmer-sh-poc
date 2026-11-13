@@ -3,6 +3,11 @@ host = "::"
 port = 8080
 root = "/public"
 log-level = "warn"
+# static-web-server's own Cache-Control is off: it gives .js, .gz and .wav a year and .html a day,
+# so a browser that loaded one version kept its scripts for a year and ran them against the next
+# version's files (2026-11-12: a cached worker.js fetched a clai.wasm the new site no longer had).
+# Every file gets no-cache below instead.
+cache-control-headers = false
 
 [advanced]
 
@@ -14,3 +19,7 @@ source = "**"
 [advanced.headers.headers]
 Cross-Origin-Opener-Policy = "same-origin"
 Cross-Origin-Embedder-Policy = "require-corp"
+# Revalidate every file on every load: the server answers If-Modified-Since with 304 and no body,
+# so an unchanged file costs one round trip, and a deploy is seen at once. Edge's CDN cache keeps
+# them too and revalidates the same way.
+Cache-Control = "no-cache"
