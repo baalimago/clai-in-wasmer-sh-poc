@@ -1,12 +1,14 @@
 // Downloads the Wasmer registry packages that packages.txt lists into www/packages, as webc v3
 // files, with an index.json the page's worker loads them from. A package marked optional that
-// the registry does not have is left out.
+// the registry does not have is left out. PACKAGES_FILE and PACKAGES_OUT move the list and the
+// destination, for a caller that ships a subset (the Makefile's `packages` target).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WEB = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(WEB, "www", "packages");
+const OUT = process.env.PACKAGES_OUT ?? path.join(WEB, "www", "packages");
+const LIST = process.env.PACKAGES_FILE ?? path.join(WEB, "packages.txt");
 const REGISTRY = process.env.WASMER_REGISTRY ?? "https://registry.wasmer.io/graphql";
 
 const QUERY = `query ($name: String!, $version: String!) {
@@ -50,7 +52,7 @@ function parse(text) {
     });
 }
 
-const wanted = parse(await readFile(path.join(WEB, "packages.txt"), "utf8"));
+const wanted = parse(await readFile(LIST, "utf8"));
 await mkdir(OUT, { recursive: true });
 const index = [];
 for (const { name, version, optional } of wanted) {

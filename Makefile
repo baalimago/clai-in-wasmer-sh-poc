@@ -185,10 +185,15 @@ $(WWW)/ca-certificates.crt:
 	node -e 'process.stdout.write(require("tls").rootCertificates.join("\n") + "\n")' > $@
 
 # bash, coreutils and the rest, from registry.wasmer.io: web/packages.txt lists them.
+# A caller that ships a subset names its own list and output directory, as
+# clai-cloud does: `make packages PACKAGES_FILE=... PACKAGES_OUT=...`.
+PACKAGES_FILE ?= $(WEB)/packages.txt
+PACKAGES_OUT ?= $(WWW)/packages
+
 packages: $(WWW)/packages/index.json
 
-$(WWW)/packages/index.json: $(WEB)/packages.txt $(WEB)/fetch-packages.mjs
-	cd $(WEB) && node fetch-packages.mjs
+$(WWW)/packages/index.json: $(PACKAGES_FILE) $(WEB)/fetch-packages.mjs
+	cd $(WEB) && PACKAGES_FILE=$(PACKAGES_FILE) PACKAGES_OUT=$(PACKAGES_OUT) node fetch-packages.mjs
 
 $(WWW)/pkg/clai_web.js: $(WASM_BINDGEN) FORCE | submodules
 	$(CARGO_MISSING)
