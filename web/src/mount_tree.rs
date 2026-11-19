@@ -36,8 +36,8 @@ pub(crate) fn filesystem(
         .into_iter()
         .zip(files.into_iter().map(OwnedBuffer::from));
     let lower: Arc<dyn Filesystem> =
-        Arc::new(PackageFs::from_files(files, 0, 0).map_err(|e| format!("mount: {e}"))?);
-    let upper: Arc<dyn Filesystem> = Arc::new(MemFs::new(Arc::new(Epoch), 0o755, 0, 0));
+        Arc::new(PackageFs::from_files(files, 1, 1).map_err(|e| format!("mount: {e}"))?);
+    let upper: Arc<dyn Filesystem> = Arc::new(MemFs::new(Arc::new(Epoch), 0o755, 1, 1));
     Ok(OverlayFs::new(Some(upper), vec![lower]))
 }
 
@@ -81,13 +81,13 @@ mod tests {
 
     impl Machine {
         fn boot() -> Self {
-            let root_fs = Arc::new(MemFs::new(Arc::new(Epoch), 0o755, 0, 0));
+            let root_fs = Arc::new(MemFs::new(Arc::new(Epoch), 0o755, 1, 1));
             let vfs = Vfs::new(root_fs);
             let root = vfs.root();
             Self {
                 vfs,
                 root,
-                cred: Cred::root(),
+                cred: Cred::user(1, 1),
             }
         }
 
@@ -199,10 +199,14 @@ mod tests {
     #[test]
     fn mount_tree_takes_writes() {
         let m1 = Machine::boot();
-        m1.mount_files("/usr/local/go", &[("seed", b"seed")]).unwrap();
+        m1.mount_files("/usr/local/go", &[("seed", b"seed"), ("cache/00/entry", b"cached")])
+            .unwrap();
         m1.write("/usr/local/go/x", b"later");
+        block_on(m1.vfs.mkdir(&m1.cx(), &m1.root, b"/usr/local/go/cache/01", 0o755)).unwrap();
+        m1.write("/usr/local/go/cache/01/new", b"written");
         assert_eq!(m1.read("/usr/local/go/x").unwrap(), b"later");
         assert_eq!(m1.read("/usr/local/go/seed").unwrap(), b"seed");
+        assert_eq!(m1.read("/usr/local/go/cache/01/new").unwrap(), b"written");
 
         let m2 = Machine::boot();
         m2.mount_files("/usr/local/go", &[("seed", b"seed")]).unwrap();
