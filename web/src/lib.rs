@@ -4,31 +4,53 @@
 //! programs on it one after another, so files they write (clai's config in `~/.config`) stay
 //! between runs.
 
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+
+#[cfg(target_arch = "wasm32")]
 mod audio;
+#[cfg(target_arch = "wasm32")]
 mod host;
+#[cfg(target_arch = "wasm32")]
 mod jshttp;
+mod mount_tree;
+#[cfg(target_arch = "wasm32")]
 mod names;
+#[cfg(target_arch = "wasm32")]
 mod net;
 mod observe;
+#[cfg(target_arch = "wasm32")]
 mod outbox;
+#[cfg(target_arch = "wasm32")]
 mod packages;
 
+#[cfg(target_arch = "wasm32")]
 use std::collections::{HashMap, VecDeque};
+#[cfg(target_arch = "wasm32")]
 use std::io;
+#[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_arch = "wasm32")]
 use std::task::{Context, Poll, Waker};
 
+#[cfg(target_arch = "wasm32")]
 use js_sys::{Promise, Uint8Array};
+#[cfg(target_arch = "wasm32")]
 use wasixv2::{
     ByteSink, ByteSource, Console, Engine, Image, ImageId, LoadError, Loader, LocalFuture, Machine,
     MachineBuilder, OwnedBuffer, ProcessConfig, RunError, Signaller, Stdio, WindowSize,
 };
+#[cfg(target_arch = "wasm32")]
 use wasixv2_vfs_package::PackageFs;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::future_to_promise;
+#[cfg(target_arch = "wasm32")]
 use wasmer::Module;
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -36,11 +58,13 @@ extern "C" {
 }
 
 /// Panics show in the console instead of as a bare `unreachable` trap.
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 fn start() {
     std::panic::set_hook(Box::new(|info| error(&info.to_string())));
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct Shell {
     machine: Rc<Machine>,
@@ -58,6 +82,7 @@ pub struct Shell {
 /// the screen or tab the user shares, with no label (left out of ffmpeg's lists) until the page
 /// relabels it on a share. The page adds the browser's other audio devices with
 /// [`Shell::add_audio_input`].
+#[cfg(target_arch = "wasm32")]
 const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab", "")];
 
 /// Boots the machine; its traffic leaves through the page's `fetch` calls ([`host`]), whose TLS
@@ -70,6 +95,7 @@ const AUDIO_INPUTS: [(&str, &str); 2] = [("mic", "Microphone (browser)"), ("tab"
 /// under `local_names`: wrappers that come before the commands they wrap. The page's audio
 /// inputs are files in `/run/audio` (see [`audio`]), `/run/page/out` sends messages to the page
 /// ([`outbox`]), and what the processes do is recorded for [`Shell::take_events`].
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub async fn boot(
@@ -171,8 +197,39 @@ pub async fn boot(
     })
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl Shell {
+    /// Mounts `files` under `path`, each named by its path below it, and resolves
+    /// once every later program can read them.
+    ///
+    /// 1. A file named `a/b` is readable at `path/a/b`; the directories it implies
+    ///    are listed by `ls`.
+    /// 2. What a program writes below `path` is readable by the next program and is
+    ///    gone when the page boots a new machine.
+    /// 3. A name that is absolute, empty, holds `..`, or repeats an earlier one
+    ///    refuses the whole call with a message naming it, and mounts nothing.
+    /// 4. A second call at the same path stacks above the first: the later file wins.
+    /// 5. A call at any other path hides no command: `/bin` and `/usr/local/bin` keep
+    ///    what boot put there.
+    pub fn mount_tree(
+        &self,
+        path: String,
+        names: Vec<String>,
+        files: Vec<Uint8Array>,
+    ) -> Promise {
+        let machine = self.machine.clone();
+        let files = files.iter().map(Uint8Array::to_vec).collect();
+        future_to_promise(async move {
+            let fs = mount_tree::filesystem(names, files).map_err(|e| JsError::new(&e))?;
+            machine
+                .mount(&path, fs, false)
+                .await
+                .map_err(|e| JsError::new(&format!("cannot mount {path}: {e}")))?;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
     /// Runs the file at `path` with `args` (`args[0]` is its name) and `env` (`KEY=VALUE`) on
     /// top of a login's, with the console as its standard streams and controlling terminal,
     /// and resolves to its exit status. What it prints collects for [`Shell::take_output`].
@@ -261,6 +318,7 @@ impl Shell {
 }
 
 /// `err`, saying what an errno is: wasm32-unknown-unknown's `io::Error` has no messages.
+#[cfg(target_arch = "wasm32")]
 fn describe(err: RunError) -> String {
     let RunError::Execve { path, err } = err else {
         return err.to_string();
@@ -277,11 +335,14 @@ fn describe(err: RunError) -> String {
 /// is the same bytes at the same address each time it starts. Browsers compile a module over
 /// 8 MB synchronously only in workers, where the machine runs. An entry holds its image's
 /// bytes, so no other image gets its identity.
+#[cfg(target_arch = "wasm32")]
 #[derive(Default)]
 struct Cache(Mutex<HashMap<ImageId, Loaded>>);
 
+#[cfg(target_arch = "wasm32")]
 type Loaded = (Engine, Module, Arc<dyn AsRef<[u8]> + Send + Sync>);
 
+#[cfg(target_arch = "wasm32")]
 impl Loader for Cache {
     fn load<'a>(
         &'a self,
@@ -305,6 +366,7 @@ impl Loader for Cache {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn window_size(rows: u16, cols: u16) -> WindowSize {
     WindowSize {
         rows,
@@ -315,9 +377,11 @@ fn window_size(rows: u16, cols: u16) -> WindowSize {
 
 /// What is typed on the console, until its input pump takes it. It never ends: an end would
 /// hang the console up.
+#[cfg(target_arch = "wasm32")]
 #[derive(Default)]
 struct Input(Mutex<(VecDeque<u8>, Option<Waker>)>);
 
+#[cfg(target_arch = "wasm32")]
 impl Input {
     fn push(&self, bytes: &[u8]) {
         let mut state = self.0.lock().unwrap();
@@ -328,6 +392,7 @@ impl Input {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl ByteSource for Input {
     fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
         let mut state = self.0.lock().unwrap();
@@ -344,9 +409,11 @@ impl ByteSource for Input {
 }
 
 /// What the console shows, until the page takes it.
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Default)]
 struct Output(Arc<Mutex<Vec<u8>>>);
 
+#[cfg(target_arch = "wasm32")]
 impl ByteSink for Output {
     fn write<'a>(&'a self, data: &'a [u8]) -> LocalFuture<'a, io::Result<usize>> {
         self.0.lock().unwrap().extend_from_slice(data);

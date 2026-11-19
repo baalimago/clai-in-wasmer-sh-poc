@@ -14,12 +14,17 @@ crate-type = ["cdylib"]
 
 [dependencies]
 async-trait = "0.1"
-js-sys = "0.3"
-wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["js", "web", "wasix1"] }
 wasixv2-abi = { path = "../components/wasmer/lib/wasixv2/abi" }
 wasixv2-vnet = { path = "../components/wasmer/lib/wasixv2/vnet" }
 wasixv2-vfs = { path = "../components/wasmer/lib/wasixv2/vfs" }
+wasixv2-vfs-mem = { path = "../components/wasmer/lib/wasixv2/vfs-mem" }
+wasixv2-vfs-overlay = { path = "../components/wasmer/lib/wasixv2/vfs-overlay" }
 wasixv2-vfs-package = { path = "../components/wasmer/lib/wasixv2/vfs-package" }
+webc = { version = "=12.0.1", default-features = false, features = ["v3"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["js", "web", "wasix1"] }
 wasmer = { path = "../components/wasmer/lib/api", default-features = false, features = ["js-default"] }
 wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "0.4"
@@ -37,4 +42,9 @@ web-sys = { version = "0.3", features = [
     "RequestRedirect",
     "Response",
 ] }
-webc = { version = "=12.0.1", default-features = false, features = ["v3"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wasixv2 = { path = "../components/wasmer/lib/wasixv2/api", default-features = false, features = ["sys", "wasix1"] }
+
+[dev-dependencies]
+futures = "0.3"

@@ -287,10 +287,13 @@ name = "clai-web"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "futures",
  "js-sys",
  "wasixv2",
  "wasixv2-abi",
  "wasixv2-vfs",
+ "wasixv2-vfs-mem",
+ "wasixv2-vfs-overlay",
  "wasixv2-vfs-package",
  "wasixv2-vnet",
  "wasm-bindgen",
@@ -2738,6 +2741,7 @@ dependencies = [
  "wasmer-compiler",
  "wasmer-derive",
  "wasmer-types",
+ "wasmer-vm",
  "wasmparser 0.259.0",
  "windows-sys 0.61.2",
 ]
